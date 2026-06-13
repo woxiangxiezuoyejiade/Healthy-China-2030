@@ -1,0 +1,28 @@
+# Unity 自动生成文件 - 全部忽略
+Library/
+Temp/
+Obj/
+Build/
+Builds/
+Logs/
+UserSettings/
+
+/Rrecordings/
+
+# VS / Rider 自动生成文件
+/.vs/
+/.idea/
+*.csproj
+*.unityproj
+*.sln
+*.suo
+*.user
+*.userprefs
+
+# 系统文件
+.DS_Store
+Thumbs.dbLibrary/ 
+ 
+ Temp/ 
+ 
+ 
