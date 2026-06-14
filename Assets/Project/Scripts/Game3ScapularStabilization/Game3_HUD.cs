@@ -1,6 +1,7 @@
 using System.Collections;
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.EventSystems;
 
 /// <summary>
 /// 射击行动 - HUD系统
@@ -55,6 +56,9 @@ public class Game3_HUD : MonoBehaviour
         // ===== 结算面板 =====
         CreateResultPanel();
 
+        // 确保 EventSystem 存在（UI按钮点击必需）
+        EnsureEventSystem();
+
         // 初始隐藏
         SetGameHUDVisible(false);
         SetResultVisible(false);
@@ -99,9 +103,9 @@ public class Game3_HUD : MonoBehaviour
 
     void CreateTopBar()
     {
-        // 分数 - 左上
-        scoreText = CreateTextElement("ScoreText", new Vector2(0f, 1f), new Vector2(200f, 50f),
-            new Vector2(20f, -25f), 28, Color.white, TextAnchor.MiddleLeft);
+        // 分数 - 顶部居中偏左
+        scoreText = CreateTextElement("ScoreText", new Vector2(0.5f, 1f), new Vector2(300f, 50f),
+            new Vector2(-100f, -25f), 28, Color.white, TextAnchor.MiddleLeft);
         scoreText.text = "得分: 0";
 
         // 倒计时 - 右上
@@ -111,7 +115,7 @@ public class Game3_HUD : MonoBehaviour
 
         // 连击 - 顶部中央
         comboText = CreateTextElement("ComboText", new Vector2(0.5f, 1f), new Vector2(300f, 50f),
-            new Vector2(0f, -25f), 26, new Color(1f, 0.85f, 0f), TextAnchor.MiddleCenter);
+            new Vector2(100f, -25f), 26, new Color(1f, 0.85f, 0f), TextAnchor.MiddleCenter);
         comboText.text = "";
     }
 
@@ -136,7 +140,7 @@ public class Game3_HUD : MonoBehaviour
         RectTransform rpRt = resultPanel.AddComponent<RectTransform>();
         rpRt.anchorMin = new Vector2(0.5f, 0.5f);
         rpRt.anchorMax = new Vector2(0.5f, 0.5f);
-        rpRt.sizeDelta = new Vector2(500f, 400f);
+        rpRt.sizeDelta = new Vector2(500f, 450f);
         rpRt.anchoredPosition = Vector2.zero;
 
         // 半透明黑色背景
@@ -149,27 +153,27 @@ public class Game3_HUD : MonoBehaviour
 
         // 得分
         resultScoreText = CreateChildText("ResultScore", resultPanel.transform, new Vector2(0.5f, 0.5f), new Vector2(400f, 50f),
-            new Vector2(0f, 80f), 40, Color.white, TextAnchor.MiddleCenter);
+            new Vector2(0f, 100f), 40, Color.white, TextAnchor.MiddleCenter);
 
         // 命中次数
         resultHitsText = CreateChildText("ResultHits", resultPanel.transform, new Vector2(0.5f, 0.5f), new Vector2(400f, 40f),
-            new Vector2(0f, 20f), 24, new Color(0.8f, 0.8f, 0.8f), TextAnchor.MiddleCenter);
+            new Vector2(0f, 40f), 24, new Color(0.8f, 0.8f, 0.8f), TextAnchor.MiddleCenter);
 
         // 最高连击
         resultComboText = CreateChildText("ResultCombo", resultPanel.transform, new Vector2(0.5f, 0.5f), new Vector2(400f, 40f),
-            new Vector2(0f, -20f), 24, new Color(0.8f, 0.8f, 0.8f), TextAnchor.MiddleCenter);
+            new Vector2(0f, 0f), 24, new Color(0.8f, 0.8f, 0.8f), TextAnchor.MiddleCenter);
 
         // 评级
         resultGradeText = CreateChildText("ResultGrade", resultPanel.transform, new Vector2(0.5f, 0.5f), new Vector2(400f, 60f),
-            new Vector2(0f, -80f), 36, new Color(1f, 0.85f, 0f), TextAnchor.MiddleCenter);
+            new Vector2(0f, -60f), 36, new Color(1f, 0.85f, 0f), TextAnchor.MiddleCenter);
 
         // 重新开始按钮
         resultRestartBtn = CreateButtonElement("RestartBtn", resultPanel.transform,
-            new Vector2(0.5f, 0f), new Vector2(180f, 45f), new Vector2(-110f, 40f), "再来一局");
+            new Vector2(0.5f, 0f), new Vector2(180f, 45f), new Vector2(-110f, 60f), "再来一局");
 
         // 返回菜单按钮
         resultMenuBtn = CreateButtonElement("MenuBtn", resultPanel.transform,
-            new Vector2(0.5f, 0f), new Vector2(180f, 45f), new Vector2(110f, 40f), "返回菜单");
+            new Vector2(0.5f, 0f), new Vector2(180f, 45f), new Vector2(110f, 60f), "返回菜单");
     }
 
     UnityEngine.UI.Text CreateTextElement(string name, Vector2 anchor, Vector2 size, Vector2 pos, int fontSize, Color color, TextAnchor alignment)
@@ -324,11 +328,34 @@ public class Game3_HUD : MonoBehaviour
 
     public void ShowResult(int score, int hits, int bestCombo, string grade)
     {
+        Debug.Log($"[Game3_HUD] ShowResult called: score={score}, hits={hits}, combo={bestCombo}, grade={grade}");
+        Debug.Log($"[Game3_HUD] ShowResult call stack:\n{System.Environment.StackTrace}");
+
+        // 先清空旧文本，避免残留
         if (resultScoreText != null) resultScoreText.text = $"最终得分: {score}";
         if (resultHitsText != null) resultHitsText.text = $"命中次数: {hits}";
         if (resultComboText != null) resultComboText.text = $"最高连击: {bestCombo}";
         if (resultGradeText != null) resultGradeText.text = grade;
+
+        // 确保面板可见
         SetResultVisible(true);
+    }
+
+    public void ClearResult()
+    {
+        if (resultScoreText != null) resultScoreText.text = "";
+        if (resultHitsText != null) resultHitsText.text = "";
+        if (resultComboText != null) resultComboText.text = "";
+        if (resultGradeText != null) resultGradeText.text = "";
+        SetResultVisible(false);
+
+        // 验证面板确实被隐藏
+        if (resultPanel != null && resultPanel.activeSelf)
+        {
+            Debug.LogWarning("[Game3_HUD] ClearResult: resultPanel still active after SetResultVisible(false), forcing deactivate.");
+            resultPanel.SetActive(false);
+        }
+        Debug.Log("[Game3_HUD] ClearResult: result panel cleared and hidden.");
     }
 
     public UnityEngine.UI.Button GetRestartButton() => resultRestartBtn;
@@ -343,5 +370,17 @@ public class Game3_HUD : MonoBehaviour
         if (cachedFont == null) cachedFont = Font.CreateDynamicFontFromOSFont("Arial", 14);
         if (cachedFont == null) cachedFont = Font.CreateDynamicFontFromOSFont("Microsoft YaHei", 14);
         return cachedFont;
+    }
+
+    void EnsureEventSystem()
+    {
+        // UI按钮点击需要 EventSystem，如果场景中没有则自动创建
+        if (FindObjectOfType<EventSystem>() == null)
+        {
+            GameObject esObj = new GameObject("EventSystem");
+            esObj.AddComponent<EventSystem>();
+            esObj.AddComponent<StandaloneInputModule>();
+            Debug.Log("[Game3_HUD] Auto-created EventSystem for UI button interaction.");
+        }
     }
 }

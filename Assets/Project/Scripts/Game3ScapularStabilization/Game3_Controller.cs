@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using UnityEngine.EventSystems;
 
 /// <summary>
 /// 射击行动 - 游戏主控制器
@@ -27,6 +28,7 @@ public class Game3_Controller : MonoBehaviour
 
     float remainingTime;
     bool hasSubmittedScore;
+    bool gameEnded;  // 防止 EndGame() 多次触发
     Coroutine gameRoutine;
     Game3_DifficultyConfig difficultyConfig;
 
@@ -36,8 +38,20 @@ public class Game3_Controller : MonoBehaviour
     int bestCombo;
     int totalScore;
 
+    // 单例检查
+    static Game3_Controller _instance;
+
     void Awake()
     {
+        // 单例检查：防止多个 Controller 实例
+        if (_instance != null && _instance != this)
+        {
+            Debug.LogWarning($"[Game3_Controller] 检测到重复实例！销毁多余的: {gameObject.name}");
+            Destroy(this);
+            return;
+        }
+        _instance = this;
+
         // 初始化难度配置
         difficultyConfig = Game3_DifficultyConfig.Normal();
 
@@ -133,6 +147,12 @@ public class Game3_Controller : MonoBehaviour
 
     void Update()
     {
+        // 结算状态下只处理UI按钮，屏蔽所有其他输入
+        if (CurrentState == Game3_GameState.Result || CurrentState == Game3_GameState.Finished)
+        {
+            return;
+        }
+
         if (CurrentState == Game3_GameState.Playing)
         {
             remainingTime -= Time.deltaTime;
@@ -151,7 +171,15 @@ public class Game3_Controller : MonoBehaviour
             }
             if (Input.GetMouseButtonDown(0))
             {
-                SimulateTestAction();
+                // 如果鼠标点击了UI元素（如结算面板按钮），不触发射击
+                if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject())
+                {
+                    // 点击被UI拦截，不处理
+                }
+                else
+                {
+                    SimulateTestAction();
+                }
             }
 
             if (remainingTime <= 0f)
@@ -191,18 +219,64 @@ public class Game3_Controller : MonoBehaviour
 
     public void RestartGame()
     {
+        Debug.Log("[Game3] RestartGame called");
+
+        // 先停止正在运行的协程
+        if (gameRoutine != null)
+        {
+            StopCoroutine(gameRoutine);
+            gameRoutine = null;
+        }
+
+        // 停止所有飞行中的弹丸
+        if (projectileSystem != null) projectileSystem.StopAllProjectiles();
+
+        // 立即重置状态，防止 Update() 中残留状态触发逻辑
+        CurrentState = Game3_GameState.Intro;
+        remainingTime = roundTime;
+        gameEnded = false;
+
+        // 重置所有统计
         hasSubmittedScore = false;
-        hud.SetResultVisible(false);
+        totalHits = 0;
+        currentCombo = 0;
+        bestCombo = 0;
+        totalScore = 0;
+
+        hud.ClearResult();
         BeginGameFlow();
     }
 
     public void ReturnToMainMenu()
     {
+        Debug.Log("[Game3] ReturnToMainMenu called");
+
+        // 先停止正在运行的协程
+        if (gameRoutine != null)
+        {
+            StopCoroutine(gameRoutine);
+            gameRoutine = null;
+        }
+
+        // 停止所有飞行中的弹丸
+        if (projectileSystem != null) projectileSystem.StopAllProjectiles();
+
+        // 立即重置状态
         CurrentState = Game3_GameState.Intro;
+        remainingTime = roundTime;
+        gameEnded = false;
+
         hud.SetGameHUDVisible(false);
-        hud.SetResultVisible(false);
+        hud.ClearResult();
         hud.SetCountdownVisible(false);
         if (sceneBuilder != null) sceneBuilder.EnterMenuMode();
+
+        // 重置所有统计数据
+        totalHits = 0;
+        currentCombo = 0;
+        bestCombo = 0;
+        totalScore = 0;
+        hasSubmittedScore = false;
 
         // 重置目标
         if (sceneBuilder != null && sceneBuilder.AllTargets != null)
@@ -220,6 +294,9 @@ public class Game3_Controller : MonoBehaviour
 
     IEnumerator GameFlowRoutine()
     {
+        // 立即设置安全状态，防止 Update() 中残留状态触发逻辑
+        CurrentState = Game3_GameState.Countdown;
+
         // 重置状态
         totalHits = 0;
         currentCombo = 0;
@@ -227,6 +304,7 @@ public class Game3_Controller : MonoBehaviour
         totalScore = 0;
         remainingTime = roundTime;
         hasSubmittedScore = false;
+        gameEnded = false;
 
         scoreManager.ResetScore();
 
@@ -251,8 +329,7 @@ public class Game3_Controller : MonoBehaviour
             yield return new WaitForSeconds(2f);
         }
 
-        // 倒计时
-        CurrentState = Game3_GameState.Countdown;
+        // 倒计时（CurrentState 已在协程开头设置为 Countdown）
         hud.SetCountdownVisible(true);
 
         for (int i = 3; i > 0; i--)
@@ -274,12 +351,18 @@ public class Game3_Controller : MonoBehaviour
 
     void EndGame()
     {
-        if (CurrentState == Game3_GameState.Result || CurrentState == Game3_GameState.Finished) return;
+        // 双重保护：只有 Playing 状态且未结束过才能触发
+        if (CurrentState != Game3_GameState.Playing) return;
+        if (gameEnded) return;
+        gameEnded = true;
         CurrentState = Game3_GameState.Result;
 
         // 计算最终得分
         int finalScore = totalScore;
         string grade = GetGrade(finalScore);
+
+        Debug.Log($"[Game3] EndGame: score={finalScore}, hits={totalHits}, combo={bestCombo}, grade={grade}");
+        Debug.Log($"[Game3] EndGame call stack:\n{System.Environment.StackTrace}");
 
         // 提交分数
         SubmitScore(finalScore);
@@ -420,6 +503,9 @@ public class Game3_Controller : MonoBehaviour
 
     void HandleTargetHit(Game3_Target target, int score)
     {
+        // 只有 Playing 状态才处理命中，防止游戏结束后残留弹丸污染新游戏数据
+        if (CurrentState != Game3_GameState.Playing) return;
+
         totalHits++;
         totalScore += score;
         currentCombo++;
@@ -507,6 +593,9 @@ public class Game3_Controller : MonoBehaviour
     {
         if (controllerObj == null) return;
 
+        // 第一步：先删除所有孤儿的 XRInteractorLineVisual（这是报错的根源）
+        RemoveOrphanedLineVisual(controllerObj);
+
         // 通过反射查找 XR Ray Interactor 类型
         Type rayInteractorType = FindXRType(
             "UnityEngine.XR.Interaction.Toolkit.XRRayInteractor",
@@ -577,24 +666,13 @@ public class Game3_Controller : MonoBehaviour
         );
         if (lineVisualType == null) return;
 
+        // 激进策略：删除所有旧的 LineVisual（不管是否孤儿）
+        // 因为后面 FixXRController 会重新添加一个正确绑定的
         Component[] lineVisuals = controllerObj.GetComponents(lineVisualType);
         foreach (Component lv in lineVisuals)
         {
-            FieldInfo interactorField = lineVisualType.GetField("m_Interactor",
-                BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Public);
-            if (interactorField == null)
-                interactorField = lineVisualType.GetField("interactor",
-                    BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Public);
-
-            if (interactorField != null)
-            {
-                object interactorValue = interactorField.GetValue(lv);
-                if (interactorValue == null)
-                {
-                    Debug.Log($"[Game3_Controller] Removing orphaned LineVisual on {controllerObj.name}.");
-                    Destroy(lv);
-                }
-            }
+            Debug.Log($"[Game3_Controller] Removing old LineVisual on {controllerObj.name} (will re-add clean one).");
+            Destroy(lv);
         }
     }
 
@@ -658,6 +736,10 @@ public class Game3_Button3D : MonoBehaviour
 
     void OnMouseDown()
     {
+        // 只在主菜单状态下响应3D按钮点击
+        Game3_Controller ctrl = FindObjectOfType<Game3_Controller>();
+        if (ctrl != null && ctrl.CurrentState != Game3_GameState.Intro) return;
+
         onClick?.Invoke();
     }
 }

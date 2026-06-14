@@ -26,6 +26,23 @@ public class Game3_ProjectileSystem : MonoBehaviour
     float lastFireTime = -100f;
     int projectileCount;
     Game3_Target lastHitTarget;  // 记录上次击中的目标，避免连续打同一个
+    List<GameObject> activeProjectiles = new List<GameObject>();  // 追踪所有活跃弹丸
+
+    /// <summary>
+    /// 停止所有飞行中的弹丸并销毁它们
+    /// </summary>
+    public void StopAllProjectiles()
+    {
+        // 停止所有此组件上的协程（FireRoutine）
+        StopAllCoroutines();
+        // 销毁所有追踪的弹丸GameObject
+        foreach (GameObject proj in activeProjectiles)
+        {
+            if (proj != null) Destroy(proj);
+        }
+        activeProjectiles.Clear();
+        Debug.Log("[ProjectileSystem] All projectiles stopped and cleared.");
+    }
 
     /// <summary>
     /// 发射弹丸，返回是否发射成功
@@ -96,6 +113,7 @@ public class Game3_ProjectileSystem : MonoBehaviour
         bullet.transform.position = startPos;
         bullet.transform.rotation = Quaternion.LookRotation(fireDir);
         bullet.transform.localScale = Vector3.one;
+        activeProjectiles.Add(bullet);  // 追踪弹丸
         // 移除碰撞器（用Raycast检测）
         // 实体炮身（不透明圆柱）
         GameObject body = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
@@ -288,6 +306,7 @@ public class Game3_ProjectileSystem : MonoBehaviour
         }
 
         Destroy(bullet);
+        activeProjectiles.Remove(bullet);
     }
 
     /// <summary>
