@@ -147,12 +147,36 @@ public class Game1_ExternalRotationController : MonoBehaviour
         hasSubmittedScore = false;
 
         if (uiController != null) uiController.ShowIntro(trainingHand, config);
-        if (uiController != null) uiController.SetHint("\u6559\u5b66\u6f14\u793a\uff1a\u8bf7\u89c2\u5bdf\u524d\u81c2\u5411\u5916\u65cb\u8f6c\uff0c\u518d\u56de\u5230\u8d77\u70b9");
-        if (handGuideVisual != null) handGuideVisual.PlayTutorialDemo(tutorialDuration);
-        if (audioController != null) audioController.PlayStart();
 
-        yield return new WaitForSeconds(tutorialDuration);
-        if (handGuideVisual != null) handGuideVisual.StopTutorialDemo();
+        // \u7b49\u5f85\u7528\u6237\u9009\u62e9\uff1a\u89c2\u770b\u6559\u5b66 \u6216 \u76f4\u63a5\u5f00\u59cb
+        bool? watchTutorial = null;
+        if (uiController != null)
+        {
+            uiController.OnTutorialChosen = () => watchTutorial = true;
+            uiController.OnSkipTutorial = () => watchTutorial = false;
+
+            while (!watchTutorial.HasValue)
+            {
+                // \u952e\u76d8\u5feb\u6377\u952e\uff0c\u65b9\u4fbf\u7f16\u8f91\u5668\u6d4b\u8bd5
+                if (Input.GetKeyDown(KeyCode.T)) watchTutorial = true;
+                if (Input.GetKeyDown(KeyCode.Return)) watchTutorial = false;
+                yield return null;
+            }
+
+            uiController.OnTutorialChosen = null;
+            uiController.OnSkipTutorial = null;
+            uiController.HideIntroButtons();
+        }
+
+        if (watchTutorial == true)
+        {
+            if (uiController != null) uiController.SetHint("\u6559\u5b66\u6f14\u793a\uff1a\u8bf7\u89c2\u5bdf\u524d\u81c2\u5411\u5916\u65cb\u8f6c\uff0c\u518d\u56de\u5230\u8d77\u70b9");
+            if (handGuideVisual != null) handGuideVisual.PlayTutorialDemo(tutorialDuration);
+            if (audioController != null) audioController.PlayStart();
+
+            yield return new WaitForSeconds(tutorialDuration);
+            if (handGuideVisual != null) handGuideVisual.StopTutorialDemo();
+        }
 
         if (uiController != null) uiController.SetHint(Game1_Text.HintElbowNinety);
         yield return new WaitForSeconds(UseFastStart() ? 0.2f : 2f);

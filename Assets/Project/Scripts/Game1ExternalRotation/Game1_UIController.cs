@@ -23,7 +23,8 @@ public class Game1_UIController : MonoBehaviour
         Game1_Text.ResultBestCombo + Game1_Text.ResultAverage + Game1_Text.ResultCoreCharged +
         Game1_Text.ResultTryAgain +
         "\u5750\u6b63\u8098\u90e8\u5f2f\u66f290\u5ea6\u6309\u63d0\u793a\u8fdb\u884c\u80a9\u5916\u65cb\u8bad\u7ec3" +
-        "\u6559\u5b66\u6f14\u793a\u8bf7\u89c2\u5bdf\u524d\u81c2\u5411\u5916\u65cb\u8f6c\u518d\u56de\u5230\u8d77\u70b9";
+        "\u6559\u5b66\u6f14\u793a\u8bf7\u89c2\u5bdf\u524d\u81c2\u5411\u5916\u65cb\u8f6c\u518d\u56de\u5230\u8d77\u70b9" +
+        "\u89c2\u770b\u6559\u5b66\u76f4\u63a5\u5f00\u59cb";
 
     [Header("Auto UI")]
     public bool autoCreateMissingUI = true;
@@ -46,6 +47,13 @@ public class Game1_UIController : MonoBehaviour
     public TextMeshProUGUI handText;
     public TextMeshProUGUI targetAngleText;
     public Slider rotationProgress;
+
+    [Header("Intro Buttons")]
+    public Button tutorialButton;
+    public Button skipTutorialButton;
+
+    public System.Action OnTutorialChosen;
+    public System.Action OnSkipTutorial;
 
     [Header("Panels")]
     public GameObject introPanel;
@@ -81,6 +89,7 @@ public class Game1_UIController : MonoBehaviour
         SetPanel(hintPanelObject, false);
         SetTrainingInfo(hand, config);
         SetHint(Game1_Text.HintSitFacingCore);
+        ShowIntroButtons();
     }
 
     public void ShowPlaying()
@@ -166,6 +175,53 @@ public class Game1_UIController : MonoBehaviour
         }
     }
 
+    public void ShowIntroButtons()
+    {
+        if (tutorialButton != null) tutorialButton.gameObject.SetActive(true);
+        if (skipTutorialButton != null) skipTutorialButton.gameObject.SetActive(true);
+    }
+
+    public void HideIntroButtons()
+    {
+        if (tutorialButton != null) tutorialButton.gameObject.SetActive(false);
+        if (skipTutorialButton != null) skipTutorialButton.gameObject.SetActive(false);
+    }
+
+    Button CreateButton(string objectName, Transform parent, Vector2 anchoredPosition, Vector2 size, string label, Color color)
+    {
+        GameObject buttonObject = new GameObject(objectName);
+        buttonObject.transform.SetParent(parent, false);
+
+        RectTransform rect = buttonObject.AddComponent<RectTransform>();
+        rect.anchorMin = new Vector2(0.5f, 0.5f);
+        rect.anchorMax = new Vector2(0.5f, 0.5f);
+        rect.pivot = new Vector2(0.5f, 0.5f);
+        rect.anchoredPosition = anchoredPosition;
+        rect.sizeDelta = size;
+
+        Image image = buttonObject.AddComponent<Image>();
+        image.color = color;
+
+        Button button = buttonObject.AddComponent<Button>();
+        button.targetGraphic = image;
+
+        GameObject labelObject = new GameObject("Label");
+        labelObject.transform.SetParent(buttonObject.transform, false);
+        RectTransform labelRect = labelObject.AddComponent<RectTransform>();
+        labelRect.anchorMin = Vector2.zero;
+        labelRect.anchorMax = Vector2.one;
+        labelRect.sizeDelta = Vector2.zero;
+
+        TextMeshProUGUI labelText = labelObject.AddComponent<TextMeshProUGUI>();
+        if (fontOverride != null) labelText.font = fontOverride;
+        labelText.fontSize = 18;
+        labelText.color = Color.white;
+        labelText.alignment = TextAlignmentOptions.Center;
+        labelText.text = label;
+
+        return button;
+    }
+
     void SetPanel(GameObject panel, bool active)
     {
         if (panel != null) panel.SetActive(active);
@@ -228,9 +284,15 @@ public class Game1_UIController : MonoBehaviour
         hintText = hintText != null ? hintText : CreateText("Hint_Text", hintPanel.transform, new Vector2(0f, 8f), 20, TextAlignmentOptions.Center, new Vector2(390f, 34f));
         rotationProgress = rotationProgress != null ? rotationProgress : CreateSlider("Rotation_Progress", hintPanel.transform, new Vector2(0f, -20f), new Vector2(360f, 14f));
 
-        introPanel = introPanel != null ? introPanel : CreatePanel("Intro_Panel", canvasObject.transform, new Vector2(0f, -80f), new Vector2(460f, 86f), new Color(0.06f, 0.14f, 0.16f, 0.20f));
-        TextMeshProUGUI introText = CreateText("Intro_Text", introPanel.transform, new Vector2(0f, 0f), 22, TextAlignmentOptions.Center, new Vector2(420f, 58f));
+        introPanel = introPanel != null ? introPanel : CreatePanel("Intro_Panel", canvasObject.transform, new Vector2(0f, -80f), new Vector2(460f, 130f), new Color(0.06f, 0.14f, 0.16f, 0.20f));
+        TextMeshProUGUI introText = CreateText("Intro_Text", introPanel.transform, new Vector2(0f, -20f), 20, TextAlignmentOptions.Center, new Vector2(410f, 54f));
         introText.text = "\u5750\u6b63\uff0c\u8098\u90e8\u5f2f\u66f2 90 \u5ea6\uff0c\u6309\u63d0\u793a\u8fdb\u884c\u80a9\u5916\u65cb\u8bad\u7ec3";
+
+        tutorialButton = tutorialButton != null ? tutorialButton : CreateButton("Tutorial_Button", introPanel.transform, new Vector2(-112f, 34f), new Vector2(210f, 50f), "\u89c2\u770b\u6559\u5b66", new Color(0.15f, 0.72f, 0.78f, 0.55f));
+        skipTutorialButton = skipTutorialButton != null ? skipTutorialButton : CreateButton("SkipTutorial_Button", introPanel.transform, new Vector2(112f, 34f), new Vector2(210f, 50f), "\u76f4\u63a5\u5f00\u59cb", new Color(0.25f, 0.60f, 0.88f, 0.55f));
+
+        if (tutorialButton != null) tutorialButton.onClick.AddListener(() => OnTutorialChosen?.Invoke());
+        if (skipTutorialButton != null) skipTutorialButton.onClick.AddListener(() => OnSkipTutorial?.Invoke());
 
         resultPanel = resultPanel != null ? resultPanel : CreatePanel("Result_Panel", canvasObject.transform, new Vector2(0f, 0f), autoHudSize, new Color(0.03f, 0.06f, 0.08f, 0.78f));
         resultTitleText = resultTitleText != null ? resultTitleText : CreateText("Result_Title_Text", resultPanel.transform, new Vector2(0f, 92f), 34, TextAlignmentOptions.Center);
