@@ -132,13 +132,13 @@ public class Game3_ShootingSceneBuilder : MonoBehaviour
     }
     #endregion
 
-    #region 白色方柱（四角）
+    #region 白色方柱（两根）
     void BuildPillars()
     {
-        MakePillar(-24f, 3.5f, 0f, 1.6f, 7f);
-        MakePillar(24f, 3.5f, 0f, 1.6f, 7f);
-        MakePillar(-24f, 3.5f, 20f, 1.6f, 7f);
-        MakePillar(24f, 3.5f, 20f, 1.6f, 7f);
+        MakePillar(-24f, 1.9f, 7f, 1.6f, 7f);
+        MakePillar(24f, 1.9f, 7f, 1.6f, 7f);
+        MakePillar(-24f, 1.9f, 23.9f, 1.6f, 7f);
+        MakePillar(24f, 1.9f, 23.9f, 1.6f, 7f);
     }
 
     void MakePillar(float x, float y, float z, float w, float h)
@@ -148,7 +148,6 @@ public class Game3_ShootingSceneBuilder : MonoBehaviour
         p.transform.SetParent(transform);
         p.transform.localPosition = new Vector3(x, y, z);
         p.transform.localScale = new Vector3(w, h, w);
-        p.transform.position = new Vector3(p.transform.position.x, h * 0.5f, p.transform.position.z);
         SetColor(p, COLOR_PILLAR);
         RemoveCollider(p);
     }
@@ -251,11 +250,8 @@ public class Game3_ShootingSceneBuilder : MonoBehaviour
     {
         GameObject weapon = new GameObject("Weapon");
         weapon.transform.SetParent(transform);
-        weapon.transform.localPosition = new Vector3(-2.8f, -1.05f, 0.45f);
-        // 强制贴地
-        Vector3 wp = weapon.transform.position;
-        wp.y = 0f;
-        weapon.transform.position = wp;
+        weapon.transform.localPosition = new Vector3(-5f, -5f, 0.45f);
+        weapon.transform.localScale = new Vector3(2f, 1.5f, 1.2f);
         weapon.transform.localRotation = Quaternion.identity;
 
         // 蓝色胶囊底座（竖立，像图片中的圆形大底座）
@@ -299,7 +295,7 @@ public class Game3_ShootingSceneBuilder : MonoBehaviour
     {
         GameObject titleObj = new GameObject("Title");
         titleObj.transform.SetParent(transform);
-        titleObj.transform.localPosition = new Vector3(0f, 4.0f, 10f);
+        titleObj.transform.localPosition = new Vector3(0f, 4f, 0f);
 
         GameObject textObj = new GameObject("TitleText");
         textObj.transform.SetParent(titleObj.transform);
@@ -319,8 +315,8 @@ public class Game3_ShootingSceneBuilder : MonoBehaviour
     #region 按钮（白底黑字）
     void BuildButtons()
     {
-        CreateButton("StartButton", "开始游戏", new Vector3(0f, 2.5f, 10f));
-        CreateButton("ExitButton", "退出游戏", new Vector3(0f, 1.6f, 10f));
+        CreateButton("StartButton", "开始游戏", new Vector3(0f, 2.5f, 0f));
+        CreateButton("ExitButton", "退出游戏", new Vector3(0f, 1.6f, 0f));
     }
 
     void CreateButton(string name, string text, Vector3 pos)
@@ -473,10 +469,8 @@ public class Game3_ShootingSceneBuilder : MonoBehaviour
         Transform weapon = transform.Find("Weapon");
         if (weapon == null) return;
         if (weapon.parent != transform) weapon.SetParent(transform);
-        weapon.transform.localPosition = new Vector3(-2.5f, -1.4f, 0.5f);
-        Vector3 wp = weapon.transform.position;
-        wp.y = 0f;
-        weapon.transform.position = wp;
+        weapon.transform.localPosition = new Vector3(-5f, -5f, 0.45f);
+        weapon.transform.localScale = new Vector3(2f, 1.5f, 1.2f);
         weapon.transform.localRotation = Quaternion.identity;
         weapon.gameObject.SetActive(true);
     }

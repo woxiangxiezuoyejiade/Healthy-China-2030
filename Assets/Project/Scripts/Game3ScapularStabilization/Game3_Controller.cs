@@ -104,15 +104,16 @@ public class Game3_Controller : MonoBehaviour
 
     void SetupMenuButtons()
     {
-        // 场景中的3D按钮点击检测 - 脚本挂到带碰撞器的子物体上
         GameObject startBtn = GameObject.Find("StartButton");
         if (startBtn != null)
         {
-            // 找到按钮背景（带碰撞器的子物体）
             GameObject startBg = startBtn.transform.Find("StartButton_BG")?.gameObject;
             if (startBg == null) startBg = startBtn;
-            Game3_Button3D btn3d = startBg.AddComponent<Game3_Button3D>();
-            btn3d.onClick = () => StartGame();
+            if (startBg.GetComponent<Game3_Button3D>() == null)
+            {
+                Game3_Button3D btn3d = startBg.AddComponent<Game3_Button3D>();
+                btn3d.onClick = () => StartGame();
+            }
         }
 
         GameObject exitBtn = GameObject.Find("ExitButton");
@@ -120,8 +121,11 @@ public class Game3_Controller : MonoBehaviour
         {
             GameObject exitBg = exitBtn.transform.Find("ExitButton_BG")?.gameObject;
             if (exitBg == null) exitBg = exitBtn;
-            Game3_Button3D btn3d = exitBg.AddComponent<Game3_Button3D>();
-            btn3d.onClick = () => ReturnToMainMenu();
+            if (exitBg.GetComponent<Game3_Button3D>() == null)
+            {
+                Game3_Button3D btn3d = exitBg.AddComponent<Game3_Button3D>();
+                btn3d.onClick = () => ReturnToMainMenu();
+            }
         }
     }
 
@@ -164,17 +168,14 @@ public class Game3_Controller : MonoBehaviour
                 actionDetector.Tick(Time.deltaTime);
             }
 
-            // ===== 测试模式：无VR设备时用键盘/鼠标测试 =====
             if (Input.GetKeyDown(KeyCode.Space))
             {
                 SimulateTestAction();
             }
             if (Input.GetMouseButtonDown(0))
             {
-                // 如果鼠标点击了UI元素（如结算面板按钮），不触发射击
                 if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject())
                 {
-                    // 点击被UI拦截，不处理
                 }
                 else
                 {
@@ -316,7 +317,7 @@ public class Game3_Controller : MonoBehaviour
         hud.UpdateTimer(remainingTime);
         hud.UpdateCombo(0);
 
-        // 校准动作检测器（无VR时跳过，用测试模式代替）
+        // 优先等待 VR 控制器就绪；若未就绪则继续等待而不显示测试提示
         bool calibrated = false;
         if (actionDetector != null)
         {
@@ -324,9 +325,21 @@ public class Game3_Controller : MonoBehaviour
         }
         if (!calibrated)
         {
-            Debug.Log("[Game3_Controller] VR控制器未就绪，已启用键盘/鼠标测试模式。按空格键或鼠标左键射击。");
-            hud.ShowFeedback("测试模式：按空格键或鼠标左键射击", new Color(0.5f, 0.9f, 1f));
-            yield return new WaitForSeconds(2f);
+            Debug.LogWarning("[Game3_Controller] VR控制器未就绪，等待控制器连接后再继续。");
+            float waitTime = 0f;
+            while (!calibrated && waitTime < 20f)
+            {
+                yield return new WaitForSeconds(0.5f);
+                waitTime += 0.5f;
+                AutoFindXRRig();
+                calibrated = actionDetector != null && actionDetector.Calibrate();
+            }
+
+            if (!calibrated)
+            {
+                Debug.LogError("[Game3_Controller] VR控制器仍未就绪，无法进入正常射击流程。");
+                yield break;
+            }
         }
 
         // 倒计时（CurrentState 已在协程开头设置为 Countdown）
@@ -402,10 +415,6 @@ public class Game3_Controller : MonoBehaviour
         // 蓄力进度反馈（可用于准星大小变化等）
     }
 
-    /// <summary>
-    /// 测试模式：模拟一次标准动作（无VR设备时用键盘/鼠标测试）
-    /// 按空格键或鼠标左键 = 模拟完成一个标准肩胛稳定动作 → 发射弹丸
-    /// </summary>
     void SimulateTestAction()
     {
         if (CurrentState != Game3_GameState.Playing) return;
@@ -417,11 +426,11 @@ public class Game3_Controller : MonoBehaviour
         }
 
         bool fired = projectileSystem.Fire();
-        Debug.Log($"[Game3_Controller] Test fire: fired={fired}");
+        Debug.Log($"[Game3_Controller] Fire: fired={fired}");
 
         if (fired)
         {
-            hud.ShowFeedback("测试射击!", new Color(0.5f, 0.9f, 1f));
+            
             if (audioSystem != null) audioSystem.PlayShoot();
 
             if (scoreManager != null)
