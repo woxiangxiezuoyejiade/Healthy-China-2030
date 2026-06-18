@@ -337,8 +337,7 @@ public class Game3_Controller : MonoBehaviour
 
             if (!calibrated)
             {
-                Debug.LogError("[Game3_Controller] VR控制器仍未就绪，无法进入正常射击流程。");
-                yield break;
+                Debug.LogWarning("[Game3_Controller] VR控制器仍未就绪，继续使用测试输入模式。");
             }
         }
 
@@ -430,7 +429,7 @@ public class Game3_Controller : MonoBehaviour
 
         if (fired)
         {
-            
+            hud.ShowFeedback("你的姿势真标准", new Color(0.2f, 1f, 0.8f));
             if (audioSystem != null) audioSystem.PlayShoot();
 
             if (scoreManager != null)
@@ -484,6 +483,7 @@ public class Game3_Controller : MonoBehaviour
                         break;
                 }
                 hud.ShowFeedback(feedback, color);
+                hud.ShowFeedback("你的姿势真标准", new Color(0.2f, 1f, 0.8f));
             }
         }
         else
