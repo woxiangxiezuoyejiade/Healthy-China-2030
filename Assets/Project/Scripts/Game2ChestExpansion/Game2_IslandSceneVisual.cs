@@ -176,27 +176,10 @@ public class Game2_IslandSceneVisual : MonoBehaviour
     {
         if (fogRoot == null) return;
 
-        Transform mist = FindChildByName(fogRoot, "SoftMist_Particles");
-        if (mist == null)
+        Transform oldMist = FindChildByName(fogRoot, "SoftMist_Particles");
+        if (oldMist != null)
         {
-            GameObject mistObject = new GameObject("SoftMist_Particles");
-            mist = mistObject.transform;
-            mist.SetParent(fogRoot, false);
-
-            ParticleSystem particles = mistObject.AddComponent<ParticleSystem>();
-            ParticleSystemRenderer renderer = mistObject.GetComponent<ParticleSystemRenderer>();
-            ConfigureMistParticles(particles, renderer);
-        }
-
-        mist.localPosition = new Vector3(0f, 1.0f, 1.2f);
-        mist.localRotation = Quaternion.identity;
-        mist.localScale = Vector3.one;
-
-        ParticleSystem particleSystem = mist.GetComponent<ParticleSystem>();
-        ParticleSystemRenderer particleRenderer = mist.GetComponent<ParticleSystemRenderer>();
-        if (particleSystem != null && particleRenderer != null)
-        {
-            ConfigureMistParticles(particleSystem, particleRenderer);
+            DestroySafe(oldMist.gameObject);
         }
 
         Game2_FogVisual fogVisual = GetComponent<Game2_FogVisual>();
@@ -387,7 +370,14 @@ public class Game2_IslandSceneVisual : MonoBehaviour
         Collider collider = target.GetComponent<Collider>();
         if (collider == null) return;
 
-        if (Application.isPlaying) Destroy(collider);
-        else DestroyImmediate(collider);
+        DestroySafe(collider);
+    }
+
+    void DestroySafe(Object target)
+    {
+        if (target == null) return;
+
+        if (Application.isPlaying) Destroy(target);
+        else DestroyImmediate(target);
     }
 }

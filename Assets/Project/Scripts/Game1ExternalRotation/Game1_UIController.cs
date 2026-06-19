@@ -1,4 +1,4 @@
-using TMPro;
+﻿using TMPro;
 using UnityEngine;
 using UnityEngine.TextCore.LowLevel;
 using UnityEngine.UI;
@@ -8,6 +8,13 @@ using UnityEditor;
 
 public class Game1_UIController : MonoBehaviour
 {
+    const string StatusPanelResourcePath = "UI/Fun1_StatusPanel";
+    const string InfoPanelResourcePath = "UI/Fun1_InfoPanel";
+    static readonly Vector2 StatusPanelPosition = new Vector2(-232f, 112f);
+    static readonly Vector2 StatusPanelSize = new Vector2(205f, 250f);
+    static readonly Vector2 InfoPanelPosition = new Vector2(232f, 112f);
+    static readonly Vector2 InfoPanelSize = new Vector2(205f, 238f);
+
     const string RequiredChineseCharacters =
         Game1_Text.HintSitFacingCore + Game1_Text.HintElbowNinety + Game1_Text.HintCalibrating +
         Game1_Text.HintCalibrationFailed + Game1_Text.HintRotateOut + Game1_Text.HintKeepRotating +
@@ -24,7 +31,8 @@ public class Game1_UIController : MonoBehaviour
         Game1_Text.ResultTryAgain +
         "\u5750\u6b63\u8098\u90e8\u5f2f\u66f290\u5ea6\u6309\u63d0\u793a\u8fdb\u884c\u80a9\u5916\u65cb\u8bad\u7ec3" +
         "\u6559\u5b66\u6f14\u793a\u8bf7\u89c2\u5bdf\u524d\u81c2\u5411\u5916\u65cb\u8f6c\u518d\u56de\u5230\u8d77\u70b9" +
-        "\u89c2\u770b\u6559\u5b66\u76f4\u63a5\u5f00\u59cb";
+        "\u89c2\u770b\u6559\u5b66\u76f4\u63a5\u5f00\u59cb" +
+        "0123456789:%+-/x SpaceABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz：，。；、！？（）/\\°";
 
     [Header("Auto UI")]
     public bool autoCreateMissingUI = true;
@@ -34,6 +42,10 @@ public class Game1_UIController : MonoBehaviour
     public Vector2 autoHudSize = new Vector2(560f, 360f);
     public float autoHudScale = 0.00135f;
     public bool preferRuntimeChineseFont = true;
+    public bool forceSceneTextFont = true;
+    public Color hudPanelTextColor = new Color(0.04f, 0.16f, 0.15f, 1f);
+    public Color hintTextColor = new Color(0.05f, 0.07f, 0.08f, 1f);
+    public Color resultTextColor = new Color(0.06f, 0.17f, 0.18f, 1f);
     public TMP_FontAsset fontOverride;
 
     [Header("HUD")]
@@ -61,12 +73,13 @@ public class Game1_UIController : MonoBehaviour
     public TextMeshProUGUI resultTitleText;
     public TextMeshProUGUI resultScoreText;
     public TextMeshProUGUI resultDetailsText;
+    public TextMeshProUGUI resultExtraText;
 
     TMP_FontAsset runtimeFontOverride;
     Transform autoHudRoot;
-    GameObject statusPanelObject;
-    GameObject infoPanelObject;
-    GameObject hintPanelObject;
+    [SerializeField] GameObject statusPanelObject;
+    [SerializeField] GameObject infoPanelObject;
+    [SerializeField] GameObject hintPanelObject;
 
     void Awake()
     {
@@ -77,7 +90,15 @@ public class Game1_UIController : MonoBehaviour
             CreateAutoUIIfNeeded();
         }
 
+        AutoResolvePanelObjects();
+        ApplyHudPanelBackgrounds();
+        EnsureResultTextLayout();
+        BindIntroButtons();
         ApplyFontOverride();
+        ApplySceneFontOverride();
+        ApplyHudPanelTextStyle();
+        ApplyHintTextStyle();
+        ApplyResultTextStyle();
     }
 
     public void ShowIntro(Game1_TrainingHand hand, Game1_DifficultyConfig config)
@@ -123,7 +144,12 @@ public class Game1_UIController : MonoBehaviour
 
     public void SetHint(string message)
     {
-        if (hintText != null) hintText.text = message;
+        TryWarmCharacters(message);
+        if (hintText != null)
+        {
+            hintText.text = message;
+            hintText.color = hintTextColor;
+        }
     }
 
     public void ShowGrade(Game1_ActionGrade grade, int actionScore)
@@ -134,25 +160,29 @@ public class Game1_UIController : MonoBehaviour
         {
             case Game1_ActionGrade.Excellent:
                 gradeText.text = $"{Game1_Text.GradeExcellent} +{actionScore}";
-                gradeText.color = Color.white;
+                gradeText.color = hudPanelTextColor;
                 break;
             case Game1_ActionGrade.Good:
                 gradeText.text = $"{Game1_Text.GradeGood} +{actionScore}";
-                gradeText.color = Color.white;
+                gradeText.color = hudPanelTextColor;
                 break;
             case Game1_ActionGrade.NeedsImprovement:
                 gradeText.text = $"{Game1_Text.GradeNeedsImprovement} +{actionScore}";
-                gradeText.color = Color.white;
+                gradeText.color = hudPanelTextColor;
                 break;
             default:
                 gradeText.text = Game1_Text.GradeInvalid;
-                gradeText.color = Color.white;
+                gradeText.color = hudPanelTextColor;
                 break;
         }
     }
 
     public void ShowResult(int finalScore, int validReps, int targetReps, int bestCombo, float averageScore, bool success)
     {
+        SetPanel(introPanel, false);
+        SetPanel(statusPanelObject, false);
+        SetPanel(infoPanelObject, false);
+        SetPanel(hintPanelObject, false);
         SetPanel(resultPanel, true);
 
         if (resultTitleText != null)
@@ -167,12 +197,15 @@ public class Game1_UIController : MonoBehaviour
 
         if (resultDetailsText != null)
         {
-            resultDetailsText.text =
-                $"{Game1_Text.ResultReps} {validReps}/{targetReps}\n" +
-                $"{Game1_Text.ResultBestCombo} x{bestCombo}\n" +
-                $"{Game1_Text.ResultAverage} {averageScore:0}\n" +
-                (success ? Game1_Text.ResultCoreCharged : Game1_Text.ResultTryAgain);
+            resultDetailsText.text = $"{Game1_Text.ResultReps} {validReps}/{targetReps}";
         }
+
+        if (resultExtraText != null)
+        {
+            resultExtraText.text = $"{Game1_Text.ResultBestCombo} x{bestCombo}    {Game1_Text.ResultAverage} {averageScore:0}";
+        }
+
+        ApplyResultTextStyle();
     }
 
     public void ShowIntroButtons()
@@ -185,6 +218,38 @@ public class Game1_UIController : MonoBehaviour
     {
         if (tutorialButton != null) tutorialButton.gameObject.SetActive(false);
         if (skipTutorialButton != null) skipTutorialButton.gameObject.SetActive(false);
+    }
+
+    public void ChooseTutorial()
+    {
+        OnTutorialChosen?.Invoke();
+    }
+
+    public void SkipTutorial()
+    {
+        OnSkipTutorial?.Invoke();
+    }
+
+    void BindIntroButtons()
+    {
+        if (tutorialButton != null)
+        {
+            tutorialButton.onClick.RemoveListener(ChooseTutorial);
+            tutorialButton.onClick.AddListener(ChooseTutorial);
+        }
+
+        if (skipTutorialButton != null)
+        {
+            skipTutorialButton.onClick.RemoveListener(SkipTutorial);
+            skipTutorialButton.onClick.AddListener(SkipTutorial);
+        }
+    }
+
+    void AutoResolvePanelObjects()
+    {
+        if (statusPanelObject == null && timerText != null) statusPanelObject = timerText.transform.parent.gameObject;
+        if (infoPanelObject == null && handText != null) infoPanelObject = handText.transform.parent.gameObject;
+        if (hintPanelObject == null && hintText != null) hintPanelObject = hintText.transform.parent.gameObject;
     }
 
     Button CreateButton(string objectName, Transform parent, Vector2 anchoredPosition, Vector2 size, string label, Color color)
@@ -213,7 +278,7 @@ public class Game1_UIController : MonoBehaviour
         labelRect.sizeDelta = Vector2.zero;
 
         TextMeshProUGUI labelText = labelObject.AddComponent<TextMeshProUGUI>();
-        if (fontOverride != null) labelText.font = fontOverride;
+        if (IsUsableFontAsset(fontOverride)) labelText.font = fontOverride;
         labelText.fontSize = 18;
         labelText.color = Color.white;
         labelText.alignment = TextAlignmentOptions.Center;
@@ -266,40 +331,203 @@ public class Game1_UIController : MonoBehaviour
             hudImage.raycastTarget = false;
         }
 
-        GameObject statusPanel = CreatePanel("Status_Panel", hudPanel.transform, new Vector2(-175f, 72f), new Vector2(185f, 205f), new Color(0.02f, 0.05f, 0.07f, 0.30f));
-        GameObject infoPanel = CreatePanel("Info_Panel", hudPanel.transform, new Vector2(102f, 96f), new Vector2(235f, 110f), new Color(0.02f, 0.05f, 0.07f, 0.22f));
+        GameObject statusPanel = CreatePanel("Status_Panel", hudPanel.transform, StatusPanelPosition, StatusPanelSize, Color.white);
+        GameObject infoPanel = CreatePanel("Info_Panel", hudPanel.transform, InfoPanelPosition, InfoPanelSize, Color.white);
         GameObject hintPanel = CreatePanel("Hint_Panel", hudPanel.transform, new Vector2(0f, -122f), new Vector2(430f, 58f), new Color(0.02f, 0.05f, 0.07f, 0.28f));
         statusPanelObject = statusPanel;
         infoPanelObject = infoPanel;
         hintPanelObject = hintPanel;
 
-        timerText = timerText != null ? timerText : CreateText("Timer_Text", statusPanel.transform, new Vector2(0f, 75f), 20, TextAlignmentOptions.Left, new Vector2(150f, 28f));
-        scoreText = scoreText != null ? scoreText : CreateText("Score_Text", statusPanel.transform, new Vector2(0f, 40f), 20, TextAlignmentOptions.Left, new Vector2(150f, 28f));
-        totalScoreText = totalScoreText != null ? totalScoreText : CreateText("TotalScore_Text", statusPanel.transform, new Vector2(0f, 5f), 18, TextAlignmentOptions.Left, new Vector2(150f, 28f));
-        repsText = repsText != null ? repsText : CreateText("Reps_Text", statusPanel.transform, new Vector2(0f, -30f), 20, TextAlignmentOptions.Left, new Vector2(150f, 28f));
-        comboText = comboText != null ? comboText : CreateText("Combo_Text", statusPanel.transform, new Vector2(0f, -66f), 18, TextAlignmentOptions.Left, new Vector2(150f, 28f));
-        handText = handText != null ? handText : CreateText("Hand_Text", infoPanel.transform, new Vector2(0f, 28f), 21, TextAlignmentOptions.Center, new Vector2(205f, 30f));
-        targetAngleText = targetAngleText != null ? targetAngleText : CreateText("TargetAngle_Text", infoPanel.transform, new Vector2(0f, -8f), 19, TextAlignmentOptions.Center, new Vector2(205f, 30f));
-        gradeText = gradeText != null ? gradeText : CreateText("Grade_Text", infoPanel.transform, new Vector2(0f, -44f), 24, TextAlignmentOptions.Center, new Vector2(205f, 34f));
+        timerText = timerText != null ? timerText : CreateText("Timer_Text", statusPanel.transform, new Vector2(0f, 80f), 21, TextAlignmentOptions.Center, new Vector2(156f, 30f));
+        scoreText = scoreText != null ? scoreText : CreateText("Score_Text", statusPanel.transform, new Vector2(0f, 40f), 21, TextAlignmentOptions.Center, new Vector2(156f, 30f));
+        totalScoreText = totalScoreText != null ? totalScoreText : CreateText("TotalScore_Text", statusPanel.transform, new Vector2(0f, 0f), 19, TextAlignmentOptions.Center, new Vector2(156f, 30f));
+        repsText = repsText != null ? repsText : CreateText("Reps_Text", statusPanel.transform, new Vector2(0f, -40f), 21, TextAlignmentOptions.Center, new Vector2(156f, 30f));
+        comboText = comboText != null ? comboText : CreateText("Combo_Text", statusPanel.transform, new Vector2(0f, -80f), 19, TextAlignmentOptions.Center, new Vector2(156f, 30f));
+        handText = handText != null ? handText : CreateText("Hand_Text", infoPanel.transform, new Vector2(0f, 62f), 22, TextAlignmentOptions.Center, new Vector2(158f, 34f));
+        targetAngleText = targetAngleText != null ? targetAngleText : CreateText("TargetAngle_Text", infoPanel.transform, new Vector2(0f, 0f), 20, TextAlignmentOptions.Center, new Vector2(158f, 34f));
+        gradeText = gradeText != null ? gradeText : CreateText("Grade_Text", infoPanel.transform, new Vector2(0f, -62f), 24, TextAlignmentOptions.Center, new Vector2(158f, 38f));
         hintText = hintText != null ? hintText : CreateText("Hint_Text", hintPanel.transform, new Vector2(0f, 8f), 20, TextAlignmentOptions.Center, new Vector2(390f, 34f));
         rotationProgress = rotationProgress != null ? rotationProgress : CreateSlider("Rotation_Progress", hintPanel.transform, new Vector2(0f, -20f), new Vector2(360f, 14f));
 
-        introPanel = introPanel != null ? introPanel : CreatePanel("Intro_Panel", canvasObject.transform, new Vector2(0f, -80f), new Vector2(460f, 130f), new Color(0.06f, 0.14f, 0.16f, 0.20f));
-        TextMeshProUGUI introText = CreateText("Intro_Text", introPanel.transform, new Vector2(0f, -20f), 20, TextAlignmentOptions.Center, new Vector2(410f, 54f));
-        introText.text = "\u5750\u6b63\uff0c\u8098\u90e8\u5f2f\u66f2 90 \u5ea6\uff0c\u6309\u63d0\u793a\u8fdb\u884c\u80a9\u5916\u65cb\u8bad\u7ec3";
+        introPanel = introPanel != null ? introPanel : CreatePanel("Intro_Panel", canvasObject.transform, new Vector2(0f, -80f), new Vector2(460f, 130f), new Color(1f, 1f, 1f, 0f));
+        Image introImage = introPanel.GetComponent<Image>();
+        if (introImage != null) introImage.raycastTarget = false;
 
         tutorialButton = tutorialButton != null ? tutorialButton : CreateButton("Tutorial_Button", introPanel.transform, new Vector2(-112f, 34f), new Vector2(210f, 50f), "\u89c2\u770b\u6559\u5b66", new Color(0.15f, 0.72f, 0.78f, 0.55f));
         skipTutorialButton = skipTutorialButton != null ? skipTutorialButton : CreateButton("SkipTutorial_Button", introPanel.transform, new Vector2(112f, 34f), new Vector2(210f, 50f), "\u76f4\u63a5\u5f00\u59cb", new Color(0.25f, 0.60f, 0.88f, 0.55f));
 
-        if (tutorialButton != null) tutorialButton.onClick.AddListener(() => OnTutorialChosen?.Invoke());
-        if (skipTutorialButton != null) skipTutorialButton.onClick.AddListener(() => OnSkipTutorial?.Invoke());
+        BindIntroButtons();
 
-        resultPanel = resultPanel != null ? resultPanel : CreatePanel("Result_Panel", canvasObject.transform, new Vector2(0f, 0f), autoHudSize, new Color(0.03f, 0.06f, 0.08f, 0.78f));
-        resultTitleText = resultTitleText != null ? resultTitleText : CreateText("Result_Title_Text", resultPanel.transform, new Vector2(0f, 92f), 34, TextAlignmentOptions.Center);
-        resultScoreText = resultScoreText != null ? resultScoreText : CreateText("Result_Score_Text", resultPanel.transform, new Vector2(0f, 34f), 28, TextAlignmentOptions.Center);
-        resultDetailsText = resultDetailsText != null ? resultDetailsText : CreateText("Result_Details_Text", resultPanel.transform, new Vector2(0f, -58f), 22, TextAlignmentOptions.Center);
+        resultPanel = resultPanel != null ? resultPanel : CreatePanel("Result_Panel", canvasObject.transform, new Vector2(0f, 44f), new Vector2(360f, 510f), new Color(1f, 1f, 1f, 0.92f));
+        resultTitleText = resultTitleText != null ? resultTitleText : CreateText("Result_Title_Text", resultPanel.transform, new Vector2(0f, 72f), 26, TextAlignmentOptions.Center, new Vector2(255f, 36f));
+        resultScoreText = resultScoreText != null ? resultScoreText : CreateText("Result_Score_Text", resultPanel.transform, new Vector2(0f, 19f), 20, TextAlignmentOptions.Center, new Vector2(255f, 34f));
+        resultDetailsText = resultDetailsText != null ? resultDetailsText : CreateText("Result_Details_Text", resultPanel.transform, new Vector2(0f, -34f), 20, TextAlignmentOptions.Center, new Vector2(255f, 34f));
+        resultExtraText = resultExtraText != null ? resultExtraText : CreateText("Result_Extra_Text", resultPanel.transform, new Vector2(0f, -87f), 18, TextAlignmentOptions.Center, new Vector2(270f, 34f));
+        if (resultDetailsText != null)
+        {
+            resultDetailsText.enableWordWrapping = false;
+            resultDetailsText.lineSpacing = 0f;
+        }
+        if (resultExtraText != null)
+        {
+            resultExtraText.enableWordWrapping = false;
+            resultExtraText.lineSpacing = 0f;
+        }
         resultPanel.SetActive(false);
         ApplyFontOverride();
+        ApplySceneFontOverride();
+        ApplyHudPanelBackgrounds();
+        ApplyHudPanelTextStyle();
+        ApplyHintTextStyle();
+    }
+
+    void ApplyHudPanelBackgrounds()
+    {
+        ApplyHudPanelBackground(statusPanelObject, StatusPanelResourcePath, StatusPanelPosition, StatusPanelSize);
+        ApplyHudPanelBackground(infoPanelObject, InfoPanelResourcePath, InfoPanelPosition, InfoPanelSize);
+        LayoutHudPanelTexts();
+    }
+
+    void ApplyHudPanelBackground(GameObject panel, string resourcePath, Vector2 position, Vector2 size)
+    {
+        if (panel == null) return;
+
+        RectTransform rect = panel.GetComponent<RectTransform>();
+        if (rect != null)
+        {
+            rect.anchorMin = new Vector2(0.5f, 0.5f);
+            rect.anchorMax = new Vector2(0.5f, 0.5f);
+            rect.pivot = new Vector2(0.5f, 0.5f);
+            rect.anchoredPosition = position;
+            rect.sizeDelta = size;
+        }
+
+        Image image = panel.GetComponent<Image>();
+        if (image == null) image = panel.AddComponent<Image>();
+
+        Sprite sprite = LoadSprite(resourcePath);
+        if (sprite != null)
+        {
+            image.sprite = sprite;
+        }
+
+        image.type = Image.Type.Simple;
+        image.preserveAspect = false;
+        image.color = Color.white;
+        image.raycastTarget = false;
+    }
+
+    void LayoutHudPanelTexts()
+    {
+        ConfigureHudText(timerText, new Vector2(0f, 80f), new Vector2(156f, 30f), 21, TextAlignmentOptions.Center);
+        ConfigureHudText(scoreText, new Vector2(0f, 40f), new Vector2(156f, 30f), 21, TextAlignmentOptions.Center);
+        ConfigureHudText(totalScoreText, new Vector2(0f, 0f), new Vector2(156f, 30f), 19, TextAlignmentOptions.Center);
+        ConfigureHudText(repsText, new Vector2(0f, -40f), new Vector2(156f, 30f), 21, TextAlignmentOptions.Center);
+        ConfigureHudText(comboText, new Vector2(0f, -80f), new Vector2(156f, 30f), 19, TextAlignmentOptions.Center);
+
+        ConfigureHudText(handText, new Vector2(0f, 62f), new Vector2(158f, 34f), 22, TextAlignmentOptions.Center);
+        ConfigureHudText(targetAngleText, new Vector2(0f, 0f), new Vector2(158f, 34f), 20, TextAlignmentOptions.Center);
+        ConfigureHudText(gradeText, new Vector2(0f, -62f), new Vector2(158f, 38f), 24, TextAlignmentOptions.Center);
+    }
+
+    void ConfigureHudText(TextMeshProUGUI text, Vector2 position, Vector2 size, int fontSize, TextAlignmentOptions alignment)
+    {
+        if (text == null) return;
+
+        RectTransform rect = text.rectTransform;
+        rect.anchorMin = new Vector2(0.5f, 0.5f);
+        rect.anchorMax = new Vector2(0.5f, 0.5f);
+        rect.pivot = new Vector2(0.5f, 0.5f);
+        rect.anchoredPosition = position;
+        rect.sizeDelta = size;
+
+        text.fontSize = fontSize;
+        text.alignment = alignment;
+        text.enableWordWrapping = false;
+        text.overflowMode = TextOverflowModes.Overflow;
+        text.transform.SetAsLastSibling();
+    }
+
+    static Sprite LoadSprite(string resourcePath)
+    {
+        Texture2D texture = Resources.Load<Texture2D>(resourcePath);
+        if (texture == null) return null;
+
+        Rect rect = new Rect(0f, 0f, texture.width, texture.height);
+        return Sprite.Create(texture, rect, new Vector2(0.5f, 0.5f), 100f);
+    }
+
+    void EnsureResultTextLayout()
+    {
+        if (resultPanel == null) return;
+
+        RectTransform resultRect = resultPanel.GetComponent<RectTransform>();
+        if (resultRect != null)
+        {
+            resultRect.anchoredPosition = new Vector2(resultRect.anchoredPosition.x, 44f);
+            resultRect.sizeDelta = new Vector2(360f, 510f);
+        }
+
+        Transform resultRoot = resultPanel.transform;
+        resultTitleText = resultTitleText != null ? resultTitleText : FindChildText(resultRoot, "Result_Title_Text");
+        resultScoreText = resultScoreText != null ? resultScoreText : FindChildText(resultRoot, "Result_Score_Text");
+        resultDetailsText = resultDetailsText != null ? resultDetailsText : FindChildText(resultRoot, "Result_Details_Text");
+        resultExtraText = resultExtraText != null ? resultExtraText : FindChildText(resultRoot, "Result_Extra_Text");
+
+        if (resultExtraText == null)
+        {
+            resultExtraText = CreateText("Result_Extra_Text", resultRoot, new Vector2(0f, -87f), 18, TextAlignmentOptions.Center, new Vector2(270f, 34f));
+            if (resultDetailsText != null)
+            {
+                resultExtraText.font = resultDetailsText.font;
+                resultExtraText.material = resultDetailsText.material;
+            }
+            resultExtraText.text = $"{Game1_Text.ResultBestCombo} x0    {Game1_Text.ResultAverage} 0";
+        }
+
+        ConfigureResultText(resultTitleText, new Vector2(0f, 72f), new Vector2(255f, 36f), 26);
+        ConfigureResultText(resultScoreText, new Vector2(0f, 19f), new Vector2(255f, 34f), 20);
+        ConfigureResultText(resultDetailsText, new Vector2(0f, -34f), new Vector2(255f, 34f), 20);
+        ConfigureResultText(resultExtraText, new Vector2(0f, -87f), new Vector2(270f, 34f), 18);
+
+        if (resultDetailsText != null && resultDetailsText.text.Contains("\n"))
+        {
+            resultDetailsText.text = $"{Game1_Text.ResultReps} 0/12";
+        }
+    }
+
+    TextMeshProUGUI FindChildText(Transform root, string childName)
+    {
+        if (root == null) return null;
+
+        TextMeshProUGUI[] texts = root.GetComponentsInChildren<TextMeshProUGUI>(true);
+        foreach (TextMeshProUGUI text in texts)
+        {
+            if (text.name == childName) return text;
+        }
+
+        return null;
+    }
+
+    void ConfigureResultText(TextMeshProUGUI text, Vector2 position, Vector2 size, int fontSize)
+    {
+        if (text == null) return;
+
+        RectTransform rect = text.rectTransform;
+        rect.anchorMin = new Vector2(0.5f, 0.5f);
+        rect.anchorMax = new Vector2(0.5f, 0.5f);
+        rect.pivot = new Vector2(0.5f, 0.5f);
+        rect.anchoredPosition = position;
+        rect.sizeDelta = size;
+
+        text.fontSize = fontSize;
+        text.fontStyle = FontStyles.Bold;
+        text.alignment = TextAlignmentOptions.Center;
+        text.enableWordWrapping = false;
+        text.overflowMode = TextOverflowModes.Overflow;
+        text.lineSpacing = 0f;
+        text.raycastTarget = false;
+        text.color = resultTextColor;
     }
 
     GameObject CreatePanel(string objectName, Transform parent, Vector2 anchoredPosition, Vector2 size, Color color)
@@ -322,7 +550,7 @@ public class Game1_UIController : MonoBehaviour
 
     void ApplyFontOverride()
     {
-        if (fontOverride == null) return;
+        if (!IsUsableFontAsset(fontOverride)) return;
 
         PrepareFontOverride();
 
@@ -339,12 +567,13 @@ public class Game1_UIController : MonoBehaviour
             targetAngleText,
             resultTitleText,
             resultScoreText,
-            resultDetailsText
+            resultDetailsText,
+            resultExtraText
         };
 
         foreach (TextMeshProUGUI text in texts)
         {
-            if (text != null) text.font = fontOverride;
+            ApplyFontToText(text);
         }
 
         if (autoHudRoot != null)
@@ -352,18 +581,92 @@ public class Game1_UIController : MonoBehaviour
             TextMeshProUGUI[] childTexts = autoHudRoot.GetComponentsInChildren<TextMeshProUGUI>(true);
             foreach (TextMeshProUGUI text in childTexts)
             {
-                text.font = fontOverride;
-                text.color = Color.white;
+                ApplyFontToText(text);
             }
         }
     }
 
+    void ApplySceneFontOverride()
+    {
+        if (!forceSceneTextFont || fontOverride == null) return;
+
+        TextMeshProUGUI[] sceneTexts = FindObjectsOfType<TextMeshProUGUI>(true);
+        foreach (TextMeshProUGUI text in sceneTexts)
+        {
+            ApplyFontToText(text);
+        }
+    }
+
+    void TryWarmCharacters(string message)
+    {
+        if (!IsUsableFontAsset(fontOverride) || string.IsNullOrEmpty(message)) return;
+
+        fontOverride.atlasPopulationMode = AtlasPopulationMode.Dynamic;
+        fontOverride.TryAddCharacters(message, out _);
+    }
+
+    void ApplyHintTextStyle()
+    {
+        if (hintText == null) return;
+
+        hintText.color = hintTextColor;
+        if (fontOverride != null) ApplyFontToText(hintText);
+    }
+
+    void ApplyHudPanelTextStyle()
+    {
+        TextMeshProUGUI[] texts =
+        {
+            timerText,
+            scoreText,
+            totalScoreText,
+            repsText,
+            comboText,
+            handText,
+            targetAngleText,
+            gradeText
+        };
+
+        foreach (TextMeshProUGUI text in texts)
+        {
+            if (text == null) continue;
+
+            text.color = hudPanelTextColor;
+            text.fontStyle = FontStyles.Bold;
+            if (fontOverride != null) ApplyFontToText(text);
+        }
+    }
+
+    void ApplyResultTextStyle()
+    {
+        ApplyResultTextStyle(resultTitleText);
+        ApplyResultTextStyle(resultScoreText);
+        ApplyResultTextStyle(resultDetailsText);
+        ApplyResultTextStyle(resultExtraText);
+    }
+
+    void ApplyResultTextStyle(TextMeshProUGUI text)
+    {
+        if (text == null) return;
+
+        text.color = resultTextColor;
+        text.fontStyle = FontStyles.Bold;
+        if (fontOverride != null) ApplyFontToText(text);
+    }
     void AutoFindFontOverride()
     {
-        if (fontOverride != null && !preferRuntimeChineseFont) return;
+        if (fontOverride != null && !preferRuntimeChineseFont && fontOverride.name.Contains("HanyiHuaMulanW SDF"))
+        {
+            if (IsUsableFontAsset(fontOverride)) return;
+            fontOverride = null;
+        }
 
 #if UNITY_EDITOR
-        Font sourceFont = AssetDatabase.LoadAssetAtPath<Font>("Assets/Project/Fonts/msyh.ttc");
+        fontOverride = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>("Assets/Project/Fonts/HanyiHuaMulanW SDF.asset");
+        if (IsUsableFontAsset(fontOverride)) return;
+        fontOverride = null;
+
+        Font sourceFont = AssetDatabase.LoadAssetAtPath<Font>("Assets/Project/Fonts/HanyiHuaMulanW.ttf");
         if (sourceFont != null)
         {
             runtimeFontOverride = TMP_FontAsset.CreateFontAsset(
@@ -371,24 +674,51 @@ public class Game1_UIController : MonoBehaviour
                 90,
                 9,
                 GlyphRenderMode.SDFAA,
-                2048,
-                2048,
+                4096,
+                4096,
                 AtlasPopulationMode.Dynamic);
-            runtimeFontOverride.name = "Runtime_Microsoft_YaHei_Game1";
+            runtimeFontOverride.name = "Runtime_HanyiHuaMulan_Game1";
             fontOverride = runtimeFontOverride;
             return;
         }
 
-        fontOverride = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>("Assets/Project/Fonts/msyh SDF.asset");
 #endif
     }
 
     void PrepareFontOverride()
     {
-        if (fontOverride == null) return;
+        if (!IsUsableFontAsset(fontOverride)) return;
 
         fontOverride.atlasPopulationMode = AtlasPopulationMode.Dynamic;
         fontOverride.TryAddCharacters(RequiredChineseCharacters, out _);
+
+        if (fontOverride.fallbackFontAssetTable != null)
+        {
+            fontOverride.fallbackFontAssetTable.Clear();
+        }
+    }
+
+    void ApplyFontToText(TextMeshProUGUI text)
+    {
+        if (text == null || !IsUsableFontAsset(fontOverride)) return;
+
+        text.font = fontOverride;
+        text.fontSharedMaterial = fontOverride.material;
+        text.enableWordWrapping = false;
+    }
+
+    static bool IsUsableFontAsset(TMP_FontAsset fontAsset)
+    {
+        try
+        {
+            return fontAsset != null &&
+                   fontAsset.material != null &&
+                   fontAsset.atlasTexture != null;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     TextMeshProUGUI CreateText(string objectName, Transform parent, Vector2 anchoredPosition, int fontSize, TextAlignmentOptions alignment, Vector2? size = null)
@@ -404,7 +734,7 @@ public class Game1_UIController : MonoBehaviour
         rect.sizeDelta = size ?? new Vector2(470f, 42f);
 
         TextMeshProUGUI text = textObject.AddComponent<TextMeshProUGUI>();
-        if (fontOverride != null) text.font = fontOverride;
+        if (IsUsableFontAsset(fontOverride)) text.font = fontOverride;
         text.fontSize = fontSize;
         text.color = Color.white;
         text.alignment = alignment;

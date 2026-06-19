@@ -1,4 +1,4 @@
-using System.Collections;
+﻿using System.Collections;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -21,16 +21,20 @@ public class Game1_HandGuideVisual : MonoBehaviour
 
     [Header("External Rotation Guide")]
     public bool showMovementArrows = true;
+    public bool showArrowHeads = false;
+    public bool useBeckoningCatGuide = true;
     public int arrowSegments = 28;
-    public float elbowHalfWidth = 0.28f;
-    public float forearmRadius = 0.42f;
-    public float startAngle = -12f;
-    public float endAngle = 62f;
-    public float guideHeightOffset = -0.32f;
-    public float guideForwardDistance = 0.95f;
+    public float movementTrackWidth = 0.055f;
+    public float elbowHalfWidth = 0.46f;
+    public float forearmRadius = 0.36f;
+    public float startAngle = -42f;
+    public float endAngle = 52f;
+    public float guideHeightOffset = -0.04f;
+    public float guideForwardDistance = 1.15f;
     public float guideLift = 0.03f;
-    public float arrowHeadLength = 0.14f;
-    public float arrowHeadWidthMultiplier = 1.55f;
+    public float arrowHeadLength = 0.24f;
+    public float arrowHeadWidthMultiplier = 2.45f;
+    [Range(0.02f, 0.5f)] public float movementTrackAlpha = 0.18f;
     public Color arrowColor = new Color(1f, 1f, 1f, 0.30f);
 
     [Header("Tutorial Demo")]
@@ -79,7 +83,7 @@ public class Game1_HandGuideVisual : MonoBehaviour
 
         tutorialDemoActive = true;
         tutorialDemoProgress = 0f;
-        tutorialDemoHand = Game1_TrainingHand.Right;
+        tutorialDemoHand = trainingHand;
         tutorialRoutine = StartCoroutine(TutorialDemoRoutine(duration));
     }
 
@@ -129,8 +133,8 @@ public class Game1_HandGuideVisual : MonoBehaviour
         {
             if (leftArrow == null) leftArrow = CreateArrowLine("Game1_Left_MovementArrow");
             if (rightArrow == null) rightArrow = CreateArrowLine("Game1_Right_MovementArrow");
-            if (leftArrowHead == null) leftArrowHead = CreateArrowHead("Game1_Left_ArrowHead");
-            if (rightArrowHead == null) rightArrowHead = CreateArrowHead("Game1_Right_ArrowHead");
+            if (showArrowHeads && leftArrowHead == null) leftArrowHead = CreateArrowHead("Game1_Left_ArrowHead");
+            if (showArrowHeads && rightArrowHead == null) rightArrowHead = CreateArrowHead("Game1_Right_ArrowHead");
         }
     }
 
@@ -158,10 +162,10 @@ public class Game1_HandGuideVisual : MonoBehaviour
         LineRenderer line = arrowObject.AddComponent<LineRenderer>();
         line.useWorldSpace = true;
         line.positionCount = arrowSegments + 1;
-        line.startWidth = guideTrackWidth;
-        line.endWidth = guideTrackWidth;
-        line.startColor = arrowColor;
-        line.endColor = arrowColor;
+        line.startWidth = GetMovementTrackWidth();
+        line.endWidth = GetMovementTrackWidth();
+        line.startColor = GetMovementTrackColor();
+        line.endColor = GetMovementTrackColor();
         line.numCapVertices = 10;
         line.numCornerVertices = 10;
         line.material = arrowMaterial;
@@ -176,10 +180,10 @@ public class Game1_HandGuideVisual : MonoBehaviour
         LineRenderer line = arrowHead.AddComponent<LineRenderer>();
         line.useWorldSpace = true;
         line.positionCount = 3;
-        line.startWidth = guideTrackWidth;
-        line.endWidth = guideTrackWidth;
-        line.startColor = arrowColor;
-        line.endColor = arrowColor;
+        line.startWidth = GetMovementTrackWidth();
+        line.endWidth = GetMovementTrackWidth();
+        line.startColor = GetMovementTrackColor();
+        line.endColor = GetMovementTrackColor();
         line.numCapVertices = 10;
         line.numCornerVertices = 10;
         line.material = arrowMaterial;
@@ -206,23 +210,26 @@ public class Game1_HandGuideVisual : MonoBehaviour
         bool visible = showMovementArrows && leftArrow != null && rightArrow != null;
         SetLineVisible(leftArrow, visible);
         SetLineVisible(rightArrow, visible);
-        SetLineVisible(leftArrowHead, visible);
-        SetLineVisible(rightArrowHead, visible);
+        SetLineVisible(leftArrowHead, visible && showArrowHeads);
+        SetLineVisible(rightArrowHead, visible && showArrowHeads);
         if (!visible) return;
 
         DrawArc(leftArrow, false, out Vector3 leftEnd, out Vector3 leftTangent);
         DrawArc(rightArrow, true, out Vector3 rightEnd, out Vector3 rightTangent);
-        DrawArrowHead(leftArrowHead, false, leftEnd, leftTangent);
-        DrawArrowHead(rightArrowHead, true, rightEnd, rightTangent);
+        if (showArrowHeads)
+        {
+            DrawArrowHead(leftArrowHead, false, leftEnd, leftTangent);
+            DrawArrowHead(rightArrowHead, true, rightEnd, rightTangent);
+        }
     }
 
     void DrawArc(LineRenderer line, bool isRightSide, out Vector3 endPosition, out Vector3 endTangent)
     {
         line.positionCount = arrowSegments + 1;
-        line.startWidth = guideTrackWidth;
-        line.endWidth = guideTrackWidth;
-        line.startColor = arrowColor;
-        line.endColor = arrowColor;
+        line.startWidth = GetMovementTrackWidth();
+        line.endWidth = GetMovementTrackWidth();
+        line.startColor = GetMovementTrackColor();
+        line.endColor = GetMovementTrackColor();
 
         Vector3 previous = GetGuidePoint(isRightSide, startAngle);
         for (int i = 0; i <= arrowSegments; i++)
@@ -243,18 +250,20 @@ public class Game1_HandGuideVisual : MonoBehaviour
         if (line == null) return;
         if (tangent.sqrMagnitude < 0.001f) tangent = GetHeadRight() * (isRightSide ? 1f : -1f);
 
-        Vector3 side = GetHeadRight() * (isRightSide ? 1f : -1f);
+        Vector3 side = GetArrowHeadNormal(isRightSide, tangent);
         Vector3 baseCenter = tip - tangent.normalized * arrowHeadLength;
-        float halfWidth = guideTrackWidth * arrowHeadWidthMultiplier;
+        float trackWidth = GetMovementTrackWidth();
+        float halfWidth = trackWidth * arrowHeadWidthMultiplier;
 
-        line.positionCount = 3;
-        line.startWidth = guideTrackWidth;
-        line.endWidth = guideTrackWidth;
-        line.startColor = arrowColor;
-        line.endColor = arrowColor;
+        line.positionCount = 4;
+        line.startWidth = trackWidth;
+        line.endWidth = trackWidth;
+        line.startColor = GetMovementTrackColor();
+        line.endColor = GetMovementTrackColor();
         line.SetPosition(0, baseCenter - side * halfWidth);
         line.SetPosition(1, tip);
         line.SetPosition(2, baseCenter + side * halfWidth);
+        line.SetPosition(3, baseCenter - side * halfWidth);
     }
 
     void GetHandPositions(out Vector3 leftPosition, out Vector3 rightPosition)
@@ -292,9 +301,9 @@ public class Game1_HandGuideVisual : MonoBehaviour
         Vector3 elbowPivot = chestCenter + right * elbowHalfWidth * sideSign;
         float radians = angleDegrees * Mathf.Deg2Rad;
 
-        Vector3 radial =
-            forward * Mathf.Cos(radians) +
-            right * sideSign * Mathf.Sin(radians);
+        Vector3 radial = useBeckoningCatGuide
+            ? forward * Mathf.Cos(radians) + Vector3.up * Mathf.Sin(radians)
+            : forward * Mathf.Cos(radians) + right * sideSign * Mathf.Sin(radians);
 
         float lift = Mathf.Sin(Mathf.InverseLerp(startAngle, endAngle, angleDegrees) * Mathf.PI) * guideLift;
         return elbowPivot + radial * forearmRadius + Vector3.up * lift;
@@ -328,9 +337,32 @@ public class Game1_HandGuideVisual : MonoBehaviour
         return forward;
     }
 
+    Vector3 GetArrowHeadNormal(bool isRightSide, Vector3 tangent)
+    {
+        if (!useBeckoningCatGuide)
+        {
+            return GetHeadRight() * (isRightSide ? 1f : -1f);
+        }
+
+        Vector3 planeNormal = GetHeadRight() * (isRightSide ? 1f : -1f);
+        Vector3 normal = Vector3.Cross(tangent.normalized, planeNormal).normalized;
+        if (normal.sqrMagnitude < 0.001f) normal = Vector3.up;
+        return normal;
+    }
+
     void SetLineVisible(LineRenderer line, bool visible)
     {
         if (line != null) line.enabled = visible;
+    }
+
+    float GetMovementTrackWidth()
+    {
+        return Mathf.Max(0.01f, movementTrackWidth);
+    }
+
+    Color GetMovementTrackColor()
+    {
+        return new Color(arrowColor.r, arrowColor.g, arrowColor.b, Mathf.Min(arrowColor.a, movementTrackAlpha));
     }
 
     IEnumerator TutorialDemoRoutine(float duration)
@@ -345,7 +377,16 @@ public class Game1_HandGuideVisual : MonoBehaviour
             int cycleIndex = Mathf.FloorToInt(elapsed / cycleDuration);
             float cycleT = Mathf.Repeat(elapsed, cycleDuration) / cycleDuration;
 
-            tutorialDemoHand = cycleIndex % 2 == 0 ? Game1_TrainingHand.Right : Game1_TrainingHand.Left;
+            if (cycleIndex % 2 == 0)
+            {
+                tutorialDemoHand = trainingHand;
+            }
+            else
+            {
+                tutorialDemoHand = trainingHand == Game1_TrainingHand.Right
+                    ? Game1_TrainingHand.Left
+                    : Game1_TrainingHand.Right;
+            }
 
             float openClose = cycleT < 0.5f
                 ? Mathf.SmoothStep(0f, 1f, cycleT * 2f)

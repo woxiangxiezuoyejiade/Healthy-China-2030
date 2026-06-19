@@ -34,7 +34,16 @@ public class Game2_SunEnergyVisual : MonoBehaviour
     public float idleEmission = 0.8f;
     public float maxEmission = 4.5f;
     public float idleLightIntensity = 0.8f;
-    public float maxLightIntensity = 5.0f;
+    public float maxLightIntensity = 1.6f;
+    [Tooltip("Keep off for VR/Pico: driving the scene light every frame can tint the whole scene.")]
+    public bool driveSceneLight = false;
+    public bool pulseSunCoreOnActionResult = false;
+    public bool pulseSceneLightOnActionResult = false;
+    [Tooltip("Keep off on Pico/Android: billboard particles can render as dark quads on some mobile pipelines. Confetti ribbons still play.")]
+    public bool useBillboardResultParticles = false;
+    public bool capConfettiOnAndroid = true;
+    public int maxConfettiCountOnAndroid = 28;
+    public float androidConfettiSpawnWindowMultiplier = 0.90f;
 
     Material sunMaterial;
     Material haloMaterial;
@@ -88,8 +97,11 @@ public class Game2_SunEnergyVisual : MonoBehaviour
     public void PlayActionResult(Game2_ActionGrade grade, int actionScore)
     {
         PlayResultEffect(grade, actionScore);
-        if (pulseRoutine != null) StopCoroutine(pulseRoutine);
-        pulseRoutine = StartCoroutine(Pulse(grade));
+        if (pulseSunCoreOnActionResult || pulseSceneLightOnActionResult)
+        {
+            if (pulseRoutine != null) StopCoroutine(pulseRoutine);
+            pulseRoutine = StartCoroutine(Pulse(grade));
+        }
     }
 
     void UpdateVisual()
@@ -100,7 +112,7 @@ public class Game2_SunEnergyVisual : MonoBehaviour
 
         SetEmission(color, emission);
 
-        if (sunLight != null)
+        if (driveSceneLight && sunLight != null)
         {
             sunLight.color = color;
             sunLight.intensity = Mathf.Lerp(idleLightIntensity, maxLightIntensity, level);
@@ -128,7 +140,7 @@ public class Game2_SunEnergyVisual : MonoBehaviour
         if (grade == Game2_ActionGrade.Invalid) color = invalidColor;
 
         SetEmission(color, grade == Game2_ActionGrade.Invalid ? 1.5f : maxEmission + 1f);
-        if (sunLight != null)
+        if (pulseSceneLightOnActionResult && sunLight != null)
         {
             sunLight.color = color;
             sunLight.intensity = grade == Game2_ActionGrade.Invalid ? 1.2f : maxLightIntensity + 1f;
@@ -197,7 +209,14 @@ public class Game2_SunEnergyVisual : MonoBehaviour
 
         if (grade == Game2_ActionGrade.Invalid || actionScore < 25)
         {
-            PlayParticles(invalidFlashParticles);
+            if (useBillboardResultParticles)
+            {
+                PlayParticles(invalidFlashParticles);
+            }
+            else
+            {
+                StartCoroutine(ConfettiRain(6, 0.42f, 0.55f));
+            }
             return;
         }
 
@@ -225,6 +244,7 @@ public class Game2_SunEnergyVisual : MonoBehaviour
     IEnumerator ConfettiRain(int count, float width, float duration)
     {
         EnsureRibbonMaterials();
+        count = GetSafeConfettiCount(count);
 
         Transform reference = Camera.main != null ? Camera.main.transform : transform;
         Vector3 forward = Vector3.ProjectOnPlane(reference.forward, Vector3.up).normalized;
@@ -232,7 +252,9 @@ public class Game2_SunEnergyVisual : MonoBehaviour
         Vector3 right = Vector3.Cross(Vector3.up, forward).normalized;
 
         Vector3 center = reference.position + forward * 1.35f + Vector3.up * 0.95f;
-        float spawnWindow = Mathf.Min(0.48f, duration * 0.45f);
+        float spawnWindow = IsAndroidDevice()
+            ? Mathf.Min(duration * androidConfettiSpawnWindowMultiplier, duration)
+            : Mathf.Min(0.48f, duration * 0.45f);
 
         for (int i = 0; i < count; i++)
         {
@@ -324,8 +346,23 @@ public class Game2_SunEnergyVisual : MonoBehaviour
         ribbonMaterials = new Material[ribbonColors.Length];
         for (int i = 0; i < ribbonColors.Length; i++)
         {
-            ribbonMaterials[i] = CreateParticleMaterial("Game2_Ribbon_Material_" + i, ribbonColors[i]);
+            ribbonMaterials[i] = CreateRibbonMaterial("Game2_Ribbon_Material_" + i, ribbonColors[i]);
         }
+    }
+
+    int GetSafeConfettiCount(int count)
+    {
+        if (capConfettiOnAndroid && IsAndroidDevice())
+        {
+            return Mathf.Min(count, Mathf.Max(6, maxConfettiCountOnAndroid));
+        }
+
+        return count;
+    }
+
+    bool IsAndroidDevice()
+    {
+        return Application.platform == RuntimePlatform.Android;
     }
 
     void PlayParticles(ParticleSystem particles)
@@ -433,6 +470,24 @@ public class Game2_SunEnergyVisual : MonoBehaviour
         if (material.HasProperty("_ZWrite")) material.SetInt("_ZWrite", 0);
         material.EnableKeyword("_ALPHABLEND_ON");
         material.renderQueue = (int)RenderQueue.Transparent;
+
+        return material;
+    }
+
+    Material CreateRibbonMaterial(string materialName, Color color)
+    {
+        Shader shader = Shader.Find("Unlit/Color");
+        if (shader == null) shader = Shader.Find("Universal Render Pipeline/Unlit");
+        if (shader == null) shader = Shader.Find("Standard");
+
+        Material material = new Material(shader);
+        material.name = materialName;
+
+        Color opaqueColor = color;
+        opaqueColor.a = 1f;
+        if (material.HasProperty("_Color")) material.color = opaqueColor;
+        if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", opaqueColor);
+        material.renderQueue = (int)RenderQueue.Geometry;
 
         return material;
     }

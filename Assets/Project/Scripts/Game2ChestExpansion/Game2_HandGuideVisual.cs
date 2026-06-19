@@ -1,4 +1,4 @@
-using System.Collections;
+﻿using System.Collections;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -24,20 +24,23 @@ public class Game2_HandGuideVisual : MonoBehaviour
 
     [Header("Arc Track Arrows")]
     public bool showMovementArrows = true;
+    public bool showArrowHeads = false;
     public int arrowSegments = 32;
-    public float guideTrackWidth = 0.12f;
-    public float shoulderHalfWidth = 0.16f;
-    public float guideRadius = 0.56f;
-    public float guideStartAngle = 8f;
-    public float guideEndAngle = 104f;
-    public float guideLift = 0.05f;
+    public float guideTrackWidth = 0.10f;
+    public float movementTrackWidth = 0.055f;
+    public float shoulderHalfWidth = 0.30f;
+    public float guideRadius = 0.38f;
+    public float guideStartAngle = 0f;
+    public float guideEndAngle = 76f;
+    public float guideLift = 0.0f;
     public float arrowHeadLength = 0.22f;
-    public float arrowHeadWidthMultiplier = 1.7f;
+    public float arrowHeadWidthMultiplier = 2.1f;
+    [Range(0.02f, 0.5f)] public float movementTrackAlpha = 0.18f;
     public Color arrowColor = new Color(1f, 1f, 1f, 0.28f);
 
     [Header("Simulator Layout")]
     public float simulatorForwardDistance = 1.10f;
-    public float simulatorChestHeightOffset = -0.22f;
+    public float simulatorChestHeightOffset = -0.02f;
     public float simulatorExpansionMultiplier = 1.0f;
 
     LineRenderer leftArrow;
@@ -122,8 +125,8 @@ public class Game2_HandGuideVisual : MonoBehaviour
         {
             if (leftArrow == null) leftArrow = CreateArrowLine("Left_MovementArrow");
             if (rightArrow == null) rightArrow = CreateArrowLine("Right_MovementArrow");
-            if (leftArrowHeadLine == null) leftArrowHeadLine = CreateArrowHead("Left_ArrowHead");
-            if (rightArrowHeadLine == null) rightArrowHeadLine = CreateArrowHead("Right_ArrowHead");
+            if (showArrowHeads && leftArrowHeadLine == null) leftArrowHeadLine = CreateArrowHead("Left_ArrowHead");
+            if (showArrowHeads && rightArrowHeadLine == null) rightArrowHeadLine = CreateArrowHead("Right_ArrowHead");
         }
     }
 
@@ -151,10 +154,10 @@ public class Game2_HandGuideVisual : MonoBehaviour
         LineRenderer line = arrowObject.AddComponent<LineRenderer>();
         line.useWorldSpace = true;
         line.positionCount = arrowSegments + 1;
-        line.startWidth = guideTrackWidth;
-        line.endWidth = guideTrackWidth;
-        line.startColor = arrowColor;
-        line.endColor = arrowColor;
+        line.startWidth = GetMovementTrackWidth();
+        line.endWidth = GetMovementTrackWidth();
+        line.startColor = GetMovementTrackColor();
+        line.endColor = GetMovementTrackColor();
         line.numCapVertices = 10;
         line.numCornerVertices = 10;
         line.material = arrowMaterial;
@@ -171,10 +174,10 @@ public class Game2_HandGuideVisual : MonoBehaviour
         LineRenderer line = arrowHead.AddComponent<LineRenderer>();
         line.useWorldSpace = true;
         line.positionCount = 3;
-        line.startWidth = guideTrackWidth;
-        line.endWidth = guideTrackWidth;
-        line.startColor = arrowColor;
-        line.endColor = arrowColor;
+        line.startWidth = GetMovementTrackWidth();
+        line.endWidth = GetMovementTrackWidth();
+        line.startColor = GetMovementTrackColor();
+        line.endColor = GetMovementTrackColor();
         line.numCapVertices = 10;
         line.numCornerVertices = 10;
         line.material = arrowMaterial;
@@ -200,15 +203,18 @@ public class Game2_HandGuideVisual : MonoBehaviour
         bool visible = showMovementArrows && leftArrow != null && rightArrow != null;
         if (leftArrow != null) leftArrow.enabled = visible;
         if (rightArrow != null) rightArrow.enabled = visible;
-        if (leftArrowHeadLine != null) leftArrowHeadLine.enabled = visible;
-        if (rightArrowHeadLine != null) rightArrowHeadLine.enabled = visible;
+        if (leftArrowHeadLine != null) leftArrowHeadLine.enabled = visible && showArrowHeads;
+        if (rightArrowHeadLine != null) rightArrowHeadLine.enabled = visible && showArrowHeads;
         if (!visible) return;
 
         SyncBallAndTrackSize();
         DrawArcArrow(leftArrow, false, out Vector3 leftEnd, out Vector3 leftTangent);
         DrawArcArrow(rightArrow, true, out Vector3 rightEnd, out Vector3 rightTangent);
-        DrawArrowHead(leftArrowHeadLine, false, leftEnd, leftTangent);
-        DrawArrowHead(rightArrowHeadLine, true, rightEnd, rightTangent);
+        if (showArrowHeads)
+        {
+            DrawArrowHead(leftArrowHeadLine, false, leftEnd, leftTangent);
+            DrawArrowHead(rightArrowHeadLine, true, rightEnd, rightTangent);
+        }
     }
 
     void DrawArcArrow(LineRenderer line, bool isRightSide, out Vector3 endPosition, out Vector3 endTangent)
@@ -218,10 +224,10 @@ public class Game2_HandGuideVisual : MonoBehaviour
             line.positionCount = arrowSegments + 1;
         }
 
-        line.startWidth = guideTrackWidth;
-        line.endWidth = guideTrackWidth;
-        line.startColor = arrowColor;
-        line.endColor = arrowColor;
+        line.startWidth = GetMovementTrackWidth();
+        line.endWidth = GetMovementTrackWidth();
+        line.startColor = GetMovementTrackColor();
+        line.endColor = GetMovementTrackColor();
 
         Vector3 previous = GetArcPoint(isRightSide, guideStartAngle);
         for (int i = 0; i <= arrowSegments; i++)
@@ -246,13 +252,14 @@ public class Game2_HandGuideVisual : MonoBehaviour
         Vector3 side = GetHeadRight() * (isRightSide ? 1f : -1f);
 
         Vector3 baseCenter = tip - forward * arrowHeadLength;
-        float halfWidth = guideTrackWidth * arrowHeadWidthMultiplier;
+        float trackWidth = GetMovementTrackWidth();
+        float halfWidth = trackWidth * arrowHeadWidthMultiplier;
 
         arrowHead.positionCount = 3;
-        arrowHead.startWidth = guideTrackWidth;
-        arrowHead.endWidth = guideTrackWidth;
-        arrowHead.startColor = arrowColor;
-        arrowHead.endColor = arrowColor;
+        arrowHead.startWidth = trackWidth;
+        arrowHead.endWidth = trackWidth;
+        arrowHead.startColor = GetMovementTrackColor();
+        arrowHead.endColor = GetMovementTrackColor();
         arrowHead.SetPosition(0, baseCenter - side * halfWidth);
         arrowHead.SetPosition(1, tip);
         arrowHead.SetPosition(2, baseCenter + side * halfWidth);
@@ -370,7 +377,18 @@ public class Game2_HandGuideVisual : MonoBehaviour
     void SyncBallAndTrackSize()
     {
         guideTrackWidth = Mathf.Max(0.01f, guideTrackWidth);
+        movementTrackWidth = Mathf.Max(0.01f, movementTrackWidth);
         ballRadius = guideTrackWidth * 0.5f;
+    }
+
+    float GetMovementTrackWidth()
+    {
+        return Mathf.Max(0.01f, movementTrackWidth);
+    }
+
+    Color GetMovementTrackColor()
+    {
+        return new Color(arrowColor.r, arrowColor.g, arrowColor.b, Mathf.Min(arrowColor.a, movementTrackAlpha));
     }
 
     Vector3 GetArcPoint(bool isRightSide, float angleDegrees)
@@ -428,5 +446,4 @@ public class Game2_HandGuideVisual : MonoBehaviour
 
         return material;
     }
-
 }

@@ -1,5 +1,6 @@
 using System;
 using UnityEngine;
+using UnityEngine.XR;
 
 public class Game1_ActionDetector : MonoBehaviour
 {
@@ -12,6 +13,10 @@ public class Game1_ActionDetector : MonoBehaviour
     public Vector3 localRotationAxis = Vector3.up;
     public bool invertRightHandAngle = false;
     public bool invertLeftHandAngle = true;
+    public bool useBeckoningCatMotion = true;
+    public float beckoningVerticalRange = 0.34f;
+    public float beckoningForwardAssist = 0.20f;
+    public float beckoningRotationAssist = 0.25f;
 
     [Header("Keyboard Simulator")]
     public bool useKeyboardSimulatorInEditor = true;
@@ -22,6 +27,17 @@ public class Game1_ActionDetector : MonoBehaviour
     public float simulatorReturnSpeed = 65f;
     public float simulatorNormalAngle = 48f;
     public float simulatorExcellentAngle = 58f;
+
+    [Header("VR Confirm Gate")]
+    public bool requireConfirmButtonOnDevice = true;
+
+    [Header("Validation Leniency")]
+    public bool useLenientVrValidation = true;
+    public float postureInvalidMultiplier = 2.2f;
+    public float speedInvalidMultiplier = 3.0f;
+    public float headYawInvalidMultiplier = 2.0f;
+    public float maxActionTimeGrace = 2.0f;
+    public float maxSafeAngleGrace = 12f;
 
     public event Action<float> OnProgressChanged;
     public event Action<Game1_ActionResult> OnActionCompleted;
@@ -50,12 +66,16 @@ public class Game1_ActionDetector : MonoBehaviour
     Quaternion previousRotation;
     float simulatedAngle;
     bool isCalibrated;
+    bool confirmWasHeld;
+    InputDevice leftDevice;
+    InputDevice rightDevice;
 
     public void Configure(Game1_DifficultyConfig difficultyConfig, Game1_TrainingHand hand)
     {
         config = difficultyConfig;
         trainingHand = hand;
         activeController = trainingHand == Game1_TrainingHand.Right ? rightController : leftController;
+        confirmWasHeld = false;
         ResetDetector();
     }
 
@@ -86,6 +106,7 @@ public class Game1_ActionDetector : MonoBehaviour
 
         startHeadYaw = head != null ? head.eulerAngles.y : 0f;
         isCalibrated = true;
+        confirmWasHeld = false;
         CurrentState = Game1_ActionState.WaitingStart;
         ResetActionMetrics();
         OnProgressChanged?.Invoke(0f);
@@ -104,6 +125,24 @@ public class Game1_ActionDetector : MonoBehaviour
     {
         if (!isCalibrated || config == null) return;
         if (!UseKeyboardSimulator() && activeController == null) return;
+
+        if (!UseKeyboardSimulator() && requireConfirmButtonOnDevice)
+        {
+            bool confirmHeld = IsConfirmHeldForActiveHand();
+            if (!confirmHeld)
+            {
+                confirmWasHeld = false;
+                ResetToWaitingWithoutScore();
+                OnProgressChanged?.Invoke(0f);
+                return;
+            }
+
+            if (!confirmWasHeld)
+            {
+                CaptureCurrentPoseAsStart();
+                confirmWasHeld = true;
+            }
+        }
 
         CurrentAngle = UseKeyboardSimulator()
             ? UpdateSimulatedAngle(deltaTime)
@@ -131,8 +170,15 @@ public class Game1_ActionDetector : MonoBehaviour
 
     float CalculateExternalRotationAngle()
     {
+        return useBeckoningCatMotion
+            ? CalculateBeckoningCatAngle()
+            : CalculateTwistAngle(localRotationAxis);
+    }
+
+    float CalculateTwistAngle(Vector3 axis)
+    {
         Quaternion delta = Quaternion.Inverse(startRotation) * activeController.rotation;
-        Vector3 axis = localRotationAxis.sqrMagnitude < 0.001f ? Vector3.up : localRotationAxis.normalized;
+        axis = axis.sqrMagnitude < 0.001f ? Vector3.up : axis.normalized;
 
         Vector3 vectorPart = new Vector3(delta.x, delta.y, delta.z);
         Vector3 projected = Vector3.Project(vectorPart, axis);
@@ -145,6 +191,24 @@ public class Game1_ActionDetector : MonoBehaviour
         if (invert) signedAngle *= -1f;
 
         return Mathf.Clamp(Mathf.Abs(signedAngle), 0f, 180f);
+    }
+
+    float CalculateBeckoningCatAngle()
+    {
+        if (activeController == null || config == null) return 0f;
+
+        Vector3 offset = activeController.position - startPosition;
+        Vector3 forward = GetHeadForward();
+        float upward = Vector3.Dot(offset, Vector3.up);
+        float backward = Mathf.Max(0f, -Vector3.Dot(offset, forward));
+
+        float effectiveLift = upward + backward * beckoningForwardAssist;
+        float positionProgress = Mathf.InverseLerp(0f, Mathf.Max(0.05f, beckoningVerticalRange), effectiveLift);
+        float positionAngle = positionProgress * config.targetAngle;
+
+        // A little rotation assist keeps the motion responsive when the real hand traces a small arc.
+        float rotationAngle = CalculateTwistAngle(Vector3.right) * Mathf.Clamp01(beckoningRotationAssist);
+        return Mathf.Clamp(Mathf.Max(positionAngle, rotationAngle), 0f, 180f);
     }
 
     void UpdateMotionMetrics(float deltaTime)
@@ -162,9 +226,11 @@ public class Game1_ActionDetector : MonoBehaviour
         }
 
         Vector3 offset = activeController.position - startPosition;
-        maxHorizontalDisplacement = Mathf.Max(maxHorizontalDisplacement, Mathf.Abs(offset.x));
-        maxVerticalDisplacement = Mathf.Max(maxVerticalDisplacement, Mathf.Abs(offset.y));
-        maxForwardDisplacement = Mathf.Max(maxForwardDisplacement, Mathf.Abs(offset.z));
+        Vector3 forward = GetHeadForward();
+        Vector3 right = Vector3.Cross(Vector3.up, forward).normalized;
+        maxHorizontalDisplacement = Mathf.Max(maxHorizontalDisplacement, Mathf.Abs(Vector3.Dot(offset, right)));
+        maxVerticalDisplacement = Mathf.Max(maxVerticalDisplacement, Mathf.Abs(Vector3.Dot(offset, Vector3.up)));
+        maxForwardDisplacement = Mathf.Max(maxForwardDisplacement, Mathf.Abs(Vector3.Dot(offset, forward)));
 
         if (deltaTime > 0.0001f)
         {
@@ -201,7 +267,7 @@ public class Game1_ActionDetector : MonoBehaviour
             return;
         }
 
-        if (CurrentAngle > config.maxSafeAngle)
+        if (CurrentAngle > GetMaxSafeAngle())
         {
             InvalidateCurrentAction(Game1_Text.HintAngleTooLarge);
             return;
@@ -213,7 +279,7 @@ public class Game1_ActionDetector : MonoBehaviour
             return;
         }
 
-        if (Time.time - actionStartTime > config.maxActionTime)
+        if (Time.time - actionStartTime > GetMaxActionTime())
         {
             InvalidateCurrentAction(Game1_Text.HintActionTooLong);
             return;
@@ -263,7 +329,7 @@ public class Game1_ActionDetector : MonoBehaviour
         bool postureStable = IsPostureStable(out _);
         bool valid = peakAngle >= config.startThresholdAngle &&
                      actionDuration >= 0.15f &&
-                     actionDuration <= config.maxActionTime &&
+                     actionDuration <= GetMaxActionTime() &&
                      postureStable;
 
         Game1_ActionResult result = new Game1_ActionResult
@@ -287,25 +353,36 @@ public class Game1_ActionDetector : MonoBehaviour
 
     bool IsPostureStable(out string reason)
     {
-        if (maxHorizontalDisplacement > config.maxHorizontalDisplacement)
+        float postureMultiplier = GetPostureInvalidMultiplier();
+        float speedMultiplier = GetSpeedInvalidMultiplier();
+        float headYawMultiplier = GetHeadYawInvalidMultiplier();
+
+        if (maxHorizontalDisplacement > config.maxHorizontalDisplacement * postureMultiplier)
         {
             reason = Game1_Text.HintKeepElbowClose;
             return false;
         }
 
-        if (maxVerticalDisplacement > config.maxVerticalDisplacement)
+        float allowedVertical = config.maxVerticalDisplacement * postureMultiplier;
+        if (useBeckoningCatMotion)
+        {
+            allowedVertical = Mathf.Max(allowedVertical, beckoningVerticalRange + 0.16f);
+        }
+
+        if (maxVerticalDisplacement > allowedVertical)
         {
             reason = Game1_Text.HintForearmStable;
             return false;
         }
 
-        if (maxForwardDisplacement > config.maxForwardDisplacement)
+        if (maxForwardDisplacement > config.maxForwardDisplacement * postureMultiplier)
         {
             reason = Game1_Text.HintDoNotSwingForward;
             return false;
         }
 
-        if (maxLinearSpeed > config.maxLinearSpeed || maxAngularSpeed > config.maxAngularSpeed)
+        if (maxLinearSpeed > config.maxLinearSpeed * speedMultiplier ||
+            maxAngularSpeed > config.maxAngularSpeed * speedMultiplier)
         {
             reason = Game1_Text.HintSlowDown;
             return false;
@@ -314,7 +391,7 @@ public class Game1_ActionDetector : MonoBehaviour
         if (head != null)
         {
             float yawChange = Mathf.Abs(Mathf.DeltaAngle(startHeadYaw, head.eulerAngles.y));
-            if (yawChange > config.maxHeadYawChange)
+            if (yawChange > config.maxHeadYawChange * headYawMultiplier)
             {
                 reason = Game1_Text.HintFaceCore;
                 return false;
@@ -323,6 +400,39 @@ public class Game1_ActionDetector : MonoBehaviour
 
         reason = string.Empty;
         return true;
+    }
+
+    float GetMaxActionTime()
+    {
+        return config.maxActionTime + (useLenientVrValidation ? maxActionTimeGrace : 0f);
+    }
+
+    float GetMaxSafeAngle()
+    {
+        return config.maxSafeAngle + (useLenientVrValidation ? maxSafeAngleGrace : 0f);
+    }
+
+    float GetPostureInvalidMultiplier()
+    {
+        return useLenientVrValidation ? Mathf.Max(1f, postureInvalidMultiplier) : 1f;
+    }
+
+    float GetSpeedInvalidMultiplier()
+    {
+        return useLenientVrValidation ? Mathf.Max(1f, speedInvalidMultiplier) : 1f;
+    }
+
+    float GetHeadYawInvalidMultiplier()
+    {
+        return useLenientVrValidation ? Mathf.Max(1f, headYawInvalidMultiplier) : 1f;
+    }
+
+    Vector3 GetHeadForward()
+    {
+        Transform reference = head != null ? head : transform;
+        Vector3 forward = Vector3.ProjectOnPlane(reference.forward, Vector3.up).normalized;
+        if (forward.sqrMagnitude < 0.001f) forward = Vector3.forward;
+        return forward;
     }
 
     void InvalidateCurrentAction(string reason)
@@ -347,6 +457,67 @@ public class Game1_ActionDetector : MonoBehaviour
         }
     }
 
+    void ResetToWaitingWithoutScore()
+    {
+        CurrentState = Game1_ActionState.WaitingStart;
+        CurrentAngle = 0f;
+        if (activeController != null)
+        {
+            startRotation = activeController.rotation;
+            startPosition = activeController.position;
+            previousPosition = startPosition;
+            previousRotation = startRotation;
+        }
+        ResetActionMetrics();
+    }
+
+    void CaptureCurrentPoseAsStart()
+    {
+        if (activeController == null) return;
+
+        startRotation = activeController.rotation;
+        startPosition = activeController.position;
+        previousPosition = startPosition;
+        previousRotation = startRotation;
+        startHeadYaw = head != null ? head.eulerAngles.y : 0f;
+        CurrentState = Game1_ActionState.WaitingStart;
+        CurrentAngle = 0f;
+        ResetActionMetrics();
+    }
+
+    bool IsConfirmHeldForActiveHand()
+    {
+        XRNode node = trainingHand == Game1_TrainingHand.Right ? XRNode.RightHand : XRNode.LeftHand;
+        InputDevice device = GetDevice(node);
+        return IsPressed(device);
+    }
+
+    InputDevice GetDevice(XRNode node)
+    {
+        if (node == XRNode.LeftHand)
+        {
+            if (!leftDevice.isValid) leftDevice = InputDevices.GetDeviceAtXRNode(XRNode.LeftHand);
+            return leftDevice;
+        }
+
+        if (!rightDevice.isValid) rightDevice = InputDevices.GetDeviceAtXRNode(XRNode.RightHand);
+        return rightDevice;
+    }
+
+    bool IsPressed(InputDevice device)
+    {
+        if (!device.isValid) return false;
+
+        if (device.TryGetFeatureValue(CommonUsages.triggerButton, out bool trigger) && trigger) return true;
+        if (device.TryGetFeatureValue(CommonUsages.primaryButton, out bool primary) && primary) return true;
+        if (device.TryGetFeatureValue(CommonUsages.secondaryButton, out bool secondary) && secondary) return true;
+        if (device.TryGetFeatureValue(CommonUsages.menuButton, out bool menu) && menu) return true;
+        if (device.TryGetFeatureValue(CommonUsages.primary2DAxisClick, out bool stickClick) && stickClick) return true;
+        if (device.TryGetFeatureValue(CommonUsages.secondary2DAxisClick, out bool stickClick2) && stickClick2) return true;
+        if (device.TryGetFeatureValue(CommonUsages.gripButton, out bool grip) && grip) return true;
+        return false;
+    }
+
     bool UseKeyboardSimulator()
     {
         return forceKeyboardSimulator || (Application.isEditor && useKeyboardSimulatorInEditor);
@@ -354,12 +525,12 @@ public class Game1_ActionDetector : MonoBehaviour
 
     float UpdateSimulatedAngle(float deltaTime)
     {
-        bool opening = Input.GetKey(simulatorOpenKey);
+        bool opening = KeyboardInputCompat.GetKey(simulatorOpenKey);
         float target = 0f;
 
         if (opening)
         {
-            target = Input.GetKey(simulatorExcellentKey)
+            target = KeyboardInputCompat.GetKey(simulatorExcellentKey)
                 ? simulatorExcellentAngle
                 : simulatorNormalAngle;
         }
